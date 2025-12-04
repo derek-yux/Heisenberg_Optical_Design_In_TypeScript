@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Zap, Move, Trash2, Play, RotateCw, Info, X, Copy } from 'lucide-react';
+import { Zap, Move, Trash2, Play, RotateCw, Info, X, Copy, Settings, BarChart3 } from 'lucide-react';
 
 type ComponentType = 'laser' | 'mirror' | 'beamsplitter' | 'polarizer' | 'detector' | 'waveplate';
 type PolarizationBasis = 'rectilinear' | 'diagonal';
@@ -16,6 +16,9 @@ interface OpticalComponent {
     basis?: PolarizationBasis;
     state?: PolarizationState;
     label?: string;
+    reflectivity?: number;
+    efficiency?: number;
+    waveplatetype?: 'quarter' | 'half';
   };
 }
 
@@ -24,6 +27,7 @@ interface Beam {
   to: { x: number; y: number };
   state: PolarizationState;
   intensity: number;
+  probabilityAmplitude?: { real: number; imag: number };
 }
 
 interface SimulationLog {
@@ -33,18 +37,26 @@ interface SimulationLog {
   componentId?: string;
   intensity?: number;
   state?: PolarizationState;
+  probability?: number;
 }
 
-const QuantumOpticsDesigner = () => {
+interface QuantumState {
+  H: { real: number; imag: number };
+  V: { real: number; imag: number };
+}
+
+const App = () => {
   const [components, setComponents] = useState<OpticalComponent[]>([]);
   const [selectedComponent, setSelectedComponent] = useState<string | null>(null);
-  const [selectedComponents, setSelectedComponents] = useState<string[]>([]);
   const [dragging, setDragging] = useState<{ id: string; startX: number; startY: number; componentStartX: number; componentStartY: number } | null>(null);
   const [beams, setBeams] = useState<Beam[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
   const [simulationLogs, setSimulationLogs] = useState<SimulationLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [showProperties, setShowProperties] = useState(false);
+  const [showProbabilities, setShowProbabilities] = useState(true);
+  const [detectorResults, setDetectorResults] = useState<Map<string, { counts: Map<PolarizationState, number>; totalPhotons: number }>>(new Map());
   const canvasRef = useRef<HTMLDivElement>(null);
   const copiedComponents = useRef<OpticalComponent[]>([]);
 
@@ -57,81 +69,85 @@ const QuantumOpticsDesigner = () => {
     { type: 'detector', icon: '◎', label: 'Detector', gradient: 'from-amber-400 to-yellow-600' },
   ];
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Delete selected component
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedComponent) {
           setComponents(components.filter(c => c.id !== selectedComponent));
           setSelectedComponent(null);
-        } else if (selectedComponents.length > 0) {
-          setComponents(components.filter(c => !selectedComponents.includes(c.id)));
-          setSelectedComponents([]);
+          setShowProperties(false);
         }
       }
       
-      // Copy: Ctrl+C or Cmd+C
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (selectedComponents.length > 0) {
-          copiedComponents.current = components.filter(c => selectedComponents.includes(c.id));
-          console.log('Copied', copiedComponents.current.length, 'components');
-        } else if (selectedComponent) {
-          const component = components.find(c => c.id === selectedComponent);
-          if (component) {
-            copiedComponents.current = [component];
-            console.log('Copied 1 component');
-          }
-        }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedComponent) {
+        const component = components.find(c => c.id === selectedComponent);
+        if (component) copiedComponents.current = [component];
       }
       
-      // Paste: Ctrl+V or Cmd+V
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        if (copiedComponents.current.length > 0) {
-          const newComponents = copiedComponents.current.map(c => ({
-            ...c,
-            id: `${c.type}_${Date.now()}_${Math.random()}`,
-            x: c.x + 50,
-            y: c.y + 50,
-          }));
-          setComponents([...components, ...newComponents]);
-          setSelectedComponents(newComponents.map(c => c.id));
-          console.log('Pasted', newComponents.length, 'components');
-        }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && copiedComponents.current.length > 0) {
+        const newComponents = copiedComponents.current.map(c => ({
+          ...c,
+          id: `${c.type}_${Date.now()}_${Math.random()}`,
+          x: c.x + 50,
+          y: c.y + 50,
+        }));
+        setComponents([...components, ...newComponents]);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedComponent, selectedComponents, components]);
+  }, [selectedComponent, components]);
 
   const loadBB84Demo = () => {
     const demoComponents: OpticalComponent[] = [
-      { id: 'laser1', type: 'laser', x: 100, y: 200, rotation: 0, properties: { state: 'H', label: 'Alice' } },
-      { id: 'polarizer1', type: 'polarizer', x: 200, y: 200, rotation: 0, properties: { basis: 'rectilinear', label: 'Basis' } },
-      { id: 'bs1', type: 'beamsplitter', x: 350, y: 200, rotation: 0, properties: { label: 'Channel' } },
-      { id: 'polarizer2', type: 'polarizer', x: 500, y: 200, rotation: 0, properties: { basis: 'rectilinear', label: 'Basis' } },
-      { id: 'detector1', type: 'detector', x: 600, y: 200, rotation: 0, properties: { label: 'Bob' } },
-      { id: 'mirror1', type: 'mirror', x: 350, y: 300, rotation: 45, properties: { label: 'Eve' } },
-      { id: 'detector2', type: 'detector', x: 350, y: 380, rotation: 90, properties: { label: 'Intercept' } },
+      { id: 'laser1', type: 'laser', x: 100, y: 200, rotation: 0, properties: { state: 'H', label: 'Alice', angle: 0 } },
+      { id: 'polarizer1', type: 'polarizer', x: 200, y: 200, rotation: 0, properties: { basis: 'rectilinear', label: 'Alice Basis', angle: 0 } },
+      { id: 'bs1', type: 'beamsplitter', x: 350, y: 200, rotation: 0, properties: { label: 'Channel', reflectivity: 0.5 } },
+      { id: 'polarizer2', type: 'polarizer', x: 500, y: 200, rotation: 0, properties: { basis: 'rectilinear', label: 'Bob Basis', angle: 0 } },
+      { id: 'detector1', type: 'detector', x: 600, y: 200, rotation: 0, properties: { label: 'Bob', efficiency: 0.95 } },
+      { id: 'mirror1', type: 'mirror', x: 350, y: 300, rotation: 45, properties: { label: 'Eve', reflectivity: 1.0 } },
+      { id: 'detector2', type: 'detector', x: 350, y: 380, rotation: 90, properties: { label: 'Eve Detector', efficiency: 0.90 } },
     ];
     setComponents(demoComponents);
     setShowInfo(true);
   };
 
   const addComponent = (type: ComponentType, x: number, y: number) => {
+    const defaultProps: Record<ComponentType, any> = {
+      laser: { state: 'H', angle: 0 },
+      polarizer: { basis: 'rectilinear', angle: 0 },
+      beamsplitter: { reflectivity: 0.5 },
+      mirror: { reflectivity: 1.0 },
+      detector: { efficiency: 0.95 },
+      waveplate: { waveplatetype: 'quarter', angle: 45 },
+    };
+
     const newComponent: OpticalComponent = {
       id: `${type}_${Date.now()}`,
       type,
       x,
       y,
       rotation: 0,
-      properties: {
-        state: type === 'laser' ? 'H' : undefined,
-        basis: type === 'polarizer' ? 'rectilinear' : undefined,
-      },
+      properties: defaultProps[type],
     };
     setComponents([...components, newComponent]);
+  };
+
+  const updateComponentProperty = (id: string, property: string, value: any) => {
+    setComponents(components.map(c =>
+      c.id === id ? { ...c, properties: { ...c.properties, [property]: value } } : c
+    ));
+  };
+
+  const calculateQuantumProbability = (state: QuantumState, angle: number): number => {
+    const cosA = Math.cos(angle * Math.PI / 180);
+    const sinA = Math.sin(angle * Math.PI / 180);
+    
+    const projectedReal = state.H.real * cosA + state.V.real * sinA;
+    const projectedImag = state.H.imag * cosA + state.V.imag * sinA;
+    
+    return projectedReal * projectedReal + projectedImag * projectedImag;
   };
 
   const handleToolbarDragStart = (e: React.DragEvent, type: ComponentType) => {
@@ -149,7 +165,13 @@ const QuantumOpticsDesigner = () => {
     }
   };
 
-  const handleComponentMouseDown = (e: React.MouseEvent, id: string) => {
+  const handleComponentClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedComponent(id);
+    setShowProperties(true);
+  };
+
+  const handleComponentDragStart = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const component = components.find(c => c.id === id);
     if (component && canvasRef.current) {
@@ -160,12 +182,11 @@ const QuantumOpticsDesigner = () => {
         componentStartX: component.x,
         componentStartY: component.y,
       });
-      setSelectedComponent(id);
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (dragging && canvasRef.current) {
+    if (dragging) {
       const deltaX = e.clientX - dragging.startX;
       const deltaY = e.clientY - dragging.startY;
       
@@ -193,7 +214,18 @@ const QuantumOpticsDesigner = () => {
     if (selectedComponent) {
       setComponents(components.filter(c => c.id !== selectedComponent));
       setSelectedComponent(null);
+      setShowProperties(false);
     }
+  };
+
+  const resetBoard = () => {
+    setComponents([]);
+    setSelectedComponent(null);
+    setBeams([]);
+    setSimulationLogs([]);
+    setDetectorResults(new Map());
+    setShowProperties(false);
+    setShowLogs(false);
   };
 
   const duplicateComponent = () => {
@@ -217,39 +249,39 @@ const QuantumOpticsDesigner = () => {
     const newBeams: Beam[] = [];
     const logs: SimulationLog[] = [];
     let logId = 0;
+    const detectorData = new Map<string, { counts: Map<PolarizationState, number>; totalPhotons: number }>();
 
     const addLog = (type: SimulationLog['type'], message: string, data?: Partial<SimulationLog>) => {
-      logs.push({
-        timestamp: logId++,
-        type,
-        message,
-        ...data,
-      });
+      logs.push({ timestamp: logId++, type, message, ...data });
     };
 
-    // Find all lasers and trace their beams
     const lasers = components.filter(c => c.type === 'laser');
-    addLog('emission', `Starting simulation with ${lasers.length} laser source(s)`);
+    addLog('emission', `Quantum simulation initiated: ${lasers.length} photon source(s) detected`);
 
     lasers.forEach(laser => {
       let currentPos = { x: laser.x + 30, y: laser.y };
-      let currentState = laser.properties.state || 'H';
+      let currentState: QuantumState = { 
+        H: { real: 1, imag: 0 }, 
+        V: { real: 0, imag: 0 } 
+      };
+      
+      const laserAngle = laser.properties.angle || 0;
+      if (laserAngle !== 0) {
+        const cos = Math.cos(laserAngle * Math.PI / 180);
+        const sin = Math.sin(laserAngle * Math.PI / 180);
+        currentState = {
+          H: { real: cos, imag: 0 },
+          V: { real: sin, imag: 0 }
+        };
+      }
+
       let intensity = 1.0;
       let angle = laser.rotation;
       
-      const stateNames: Record<PolarizationState, string> = {
-        H: 'Horizontal',
-        V: 'Vertical',
-        D: 'Diagonal (+45°)',
-        A: 'Anti-diagonal (-45°)',
-        R: 'Right circular',
-        L: 'Left circular'
-      };
-
-      addLog('emission', `Laser "${laser.properties.label || laser.id}" emitting photon in ${stateNames[currentState]} polarization`, {
+      addLog('emission', `Photon emitted from "${laser.properties.label || laser.id}" at ${laserAngle}° polarization`, {
         componentId: laser.id,
-        state: currentState,
         intensity: 1.0,
+        probability: 1.0,
       });
 
       for (let step = 0; step < 20 && intensity > 0.01; step++) {
@@ -263,96 +295,141 @@ const QuantumOpticsDesigner = () => {
         });
 
         if (hitComponent) {
+          const stateLabel = Math.abs(currentState.H.real) > Math.abs(currentState.V.real) ? 'H' : 'V';
           newBeams.push({
             from: currentPos,
             to: { x: hitComponent.x, y: hitComponent.y },
-            state: currentState,
+            state: stateLabel as PolarizationState,
             intensity,
+            probabilityAmplitude: currentState.H,
           });
 
           if (hitComponent.type === 'polarizer') {
-            const basis = hitComponent.properties.basis || 'rectilinear';
-            const basisName = basis === 'rectilinear' ? 'Rectilinear (H/V)' : 'Diagonal (+45°/-45°)';
+            const polarizerAngle = hitComponent.properties.angle || 0;
+            const passProbability = calculateQuantumProbability(currentState, polarizerAngle);
             
-            if (basis === 'rectilinear' && (currentState === 'D' || currentState === 'A')) {
-              const oldIntensity = intensity;
-              intensity *= 0.5;
-              addLog('interaction', `Polarizer "${hitComponent.properties.label || hitComponent.id}" (${basisName}) reduces diagonal photon intensity: ${oldIntensity.toFixed(2)} → ${intensity.toFixed(2)}`, {
+            if (Math.random() < passProbability) {
+              const cos = Math.cos(polarizerAngle * Math.PI / 180);
+              const sin = Math.sin(polarizerAngle * Math.PI / 180);
+              currentState = {
+                H: { real: cos, imag: 0 },
+                V: { real: sin, imag: 0 }
+              };
+              intensity *= passProbability;
+              
+              addLog('interaction', `Polarizer "${hitComponent.properties.label || hitComponent.id}" (${polarizerAngle}°): Photon passed with probability ${(passProbability * 100).toFixed(1)}%`, {
                 componentId: hitComponent.id,
                 intensity,
+                probability: passProbability,
               });
-            } else if (basis === 'diagonal' && (currentState === 'H' || currentState === 'V')) {
-              const oldIntensity = intensity;
-              intensity *= 0.5;
-              addLog('interaction', `Polarizer "${hitComponent.properties.label || hitComponent.id}" (${basisName}) reduces rectilinear photon intensity: ${oldIntensity.toFixed(2)} → ${intensity.toFixed(2)}`, {
+            } else {
+              addLog('loss', `Polarizer "${hitComponent.properties.label || hitComponent.id}" absorbed photon (P=${((1-passProbability) * 100).toFixed(1)}%)`, {
+                componentId: hitComponent.id,
+                probability: 1 - passProbability,
+              });
+              break;
+            }
+            currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
+          } else if (hitComponent.type === 'beamsplitter') {
+            const reflectivity = hitComponent.properties.reflectivity || 0.5;
+            const transmitted = Math.random() < (1 - reflectivity);
+            
+            if (transmitted) {
+              intensity *= (1 - reflectivity);
+              addLog('interaction', `Beam splitter: Photon transmitted (T=${((1-reflectivity) * 100).toFixed(0)}%)`, {
+                componentId: hitComponent.id,
+                intensity,
+                probability: 1 - reflectivity,
+              });
+              currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
+            } else {
+              intensity *= reflectivity;
+              angle = (angle + 90) % 360;
+              addLog('interaction', `Beam splitter: Photon reflected (R=${(reflectivity * 100).toFixed(0)}%)`, {
+                componentId: hitComponent.id,
+                intensity,
+                probability: reflectivity,
+              });
+              currentPos = { x: hitComponent.x, y: hitComponent.y + 30 };
+            }
+          } else if (hitComponent.type === 'mirror') {
+            angle = (angle + 90) % 360;
+            const reflectivity = hitComponent.properties.reflectivity || 1.0;
+            intensity *= reflectivity;
+            addLog('interaction', `Mirror reflection (${(reflectivity * 100).toFixed(0)}% efficient)`, {
+              componentId: hitComponent.id,
+              intensity,
+            });
+            currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
+          } else if (hitComponent.type === 'waveplate') {
+            const wpType = hitComponent.properties.waveplatetype || 'quarter';
+            if (wpType === 'quarter') {
+              const temp = currentState.H;
+              currentState.H = currentState.V;
+              currentState.V = { real: -temp.real, imag: -temp.imag };
+              addLog('interaction', `Quarter-wave plate: H↔V transformation applied`, {
                 componentId: hitComponent.id,
                 intensity,
               });
             } else {
-              addLog('interaction', `Polarizer "${hitComponent.properties.label || hitComponent.id}" (${basisName}) passes photon (matching basis)`, {
+              currentState.V = { real: -currentState.V.real, imag: -currentState.V.imag };
+              addLog('interaction', `Half-wave plate: Phase shift applied`, {
                 componentId: hitComponent.id,
                 intensity,
               });
             }
             currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
-          } else if (hitComponent.type === 'beamsplitter') {
-            const oldIntensity = intensity;
-            intensity *= 0.5;
-            addLog('interaction', `Beam splitter "${hitComponent.properties.label || hitComponent.id}" splits photon: ${oldIntensity.toFixed(2)} → ${intensity.toFixed(2)} (transmitted) + ${intensity.toFixed(2)} (reflected)`, {
-              componentId: hitComponent.id,
-              intensity,
-            });
-            
-            const reflectedBeam = {
-              from: { x: hitComponent.x, y: hitComponent.y },
-              to: { x: hitComponent.x, y: hitComponent.y + 80 },
-              state: currentState,
-              intensity: intensity,
-            };
-            newBeams.push(reflectedBeam);
-            currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
-          } else if (hitComponent.type === 'mirror') {
-            angle = (angle + 90) % 360;
-            addLog('interaction', `Mirror "${hitComponent.properties.label || hitComponent.id}" reflects photon by 90°`, {
-              componentId: hitComponent.id,
-              intensity,
-            });
-            currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
           } else if (hitComponent.type === 'detector') {
-            addLog('detection', `✓ Detector "${hitComponent.properties.label || hitComponent.id}" measured photon! State: ${stateNames[currentState]}, Intensity: ${intensity.toFixed(2)}`, {
-              componentId: hitComponent.id,
-              state: currentState,
-              intensity,
-            });
+            const efficiency = hitComponent.properties.efficiency || 0.95;
+            if (Math.random() < efficiency) {
+              const measuredState = Math.abs(currentState.H.real) > Math.abs(currentState.V.real) ? 'H' : 'V';
+              
+              if (!detectorData.has(hitComponent.id)) {
+                detectorData.set(hitComponent.id, { counts: new Map(), totalPhotons: 0 });
+              }
+              const data = detectorData.get(hitComponent.id)!;
+              data.counts.set(measuredState, (data.counts.get(measuredState) || 0) + 1);
+              data.totalPhotons++;
+              
+              addLog('detection', `✓ Detector "${hitComponent.properties.label || hitComponent.id}" registered ${measuredState} polarization (η=${(efficiency * 100).toFixed(0)}%)`, {
+                componentId: hitComponent.id,
+                state: measuredState,
+                intensity,
+                probability: efficiency,
+              });
+            } else {
+              addLog('loss', `Detector missed photon (inefficiency: ${((1-efficiency) * 100).toFixed(0)}%)`, {
+                componentId: hitComponent.id,
+              });
+            }
             break;
           } else {
-            addLog('interaction', `Photon passed through "${hitComponent.properties.label || hitComponent.id}"`, {
-              componentId: hitComponent.id,
-              intensity,
-            });
             currentPos = { x: hitComponent.x + 30, y: hitComponent.y };
           }
         } else {
+          const stateLabel = Math.abs(currentState.H.real) > Math.abs(currentState.V.real) ? 'H' : 'V';
           newBeams.push({
             from: currentPos,
             to: nextPos,
-            state: currentState,
+            state: stateLabel as PolarizationState,
             intensity,
+            probabilityAmplitude: currentState.H,
           });
           currentPos = nextPos;
         }
 
         if (nextPos.x < 0 || nextPos.x > 1000 || nextPos.y < 0 || nextPos.y > 800) {
-          addLog('loss', `Photon exited the optical system (out of bounds)`, { intensity });
+          addLog('loss', `Photon exited optical system`, { intensity });
           break;
         }
       }
     });
 
-    addLog('emission', `Simulation complete: ${logs.filter(l => l.type === 'detection').length} detection(s), ${logs.filter(l => l.type === 'interaction').length} interaction(s)`);
+    addLog('emission', `Simulation complete: ${logs.filter(l => l.type === 'detection').length} detection events recorded`);
 
     setBeams(newBeams);
     setSimulationLogs(logs);
+    setDetectorResults(detectorData);
     setShowLogs(true);
     setTimeout(() => setIsSimulating(false), 500);
   };
@@ -370,7 +447,8 @@ const QuantumOpticsDesigner = () => {
           top: component.y,
           transform: `translate(-50%, -50%) rotate(${component.rotation}deg)`,
         }}
-        onMouseDown={(e) => handleComponentMouseDown(e, component.id)}
+        onClick={(e) => handleComponentClick(e, component.id)}
+        onMouseDown={(e) => handleComponentDragStart(e, component.id)}
       >
         <div className={`relative w-14 h-14 rounded-xl bg-gradient-to-br ${libItem?.gradient} flex items-center justify-center text-2xl shadow-2xl backdrop-blur-sm border border-white/20 ${isSelected ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-transparent' : ''}`}>
           <div className="absolute inset-0 rounded-xl bg-white/10 backdrop-blur-md"></div>
@@ -385,6 +463,8 @@ const QuantumOpticsDesigner = () => {
     );
   };
 
+  const selectedComp = components.find(c => c.id === selectedComponent);
+
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex flex-col overflow-hidden">
       {/* Header */}
@@ -394,17 +474,35 @@ const QuantumOpticsDesigner = () => {
             <Zap size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-light tracking-wide">Quantum Optical Designer</h1>
-            <p className="text-xs text-slate-400 font-light">Design & simulate quantum circuits</p>
+            <h1 className="text-xl font-light tracking-wide">Heisenberg: The Quantum Optical Designer</h1>
+            <p className="text-xs text-slate-400 font-light">Optical Systems Design CAD</p>
           </div>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => setShowProbabilities(!showProbabilities)}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all border backdrop-blur-sm text-sm font-light ${
+              showProbabilities 
+                ? 'bg-blue-600/50 border-blue-500/50' 
+                : 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-700/50'
+            }`}
+          >
+            <BarChart3 size={14} />
+            Probabilities
+          </button>
           <button
             onClick={() => setShowInfo(!showInfo)}
             className="px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg flex items-center gap-2 transition-all border border-slate-700/50 backdrop-blur-sm text-sm font-light"
           >
             <Info size={14} />
             Info
+          </button>
+          <button
+            onClick={resetBoard}
+            className="px-4 py-2 bg-red-800/50 hover:bg-red-900/50 rounded-lg flex items-center gap-2 transition-all border border-slate-700/50 hover:border-red-700/50 backdrop-blur-sm text-sm font-light text-slate-300 hover:text-red-300"
+          >
+            <Trash2 size={14} />
+            Reset
           </button>
           <button
             onClick={loadBB84Demo}
@@ -418,7 +516,7 @@ const QuantumOpticsDesigner = () => {
             className="px-5 py-2 bg-gradient-to-r from-emerald-600/80 to-teal-600/80 hover:from-emerald-500/80 hover:to-teal-500/80 rounded-lg flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg text-sm font-light"
           >
             <Play size={14} />
-            {isSimulating ? 'Simulating...' : 'Simulate'}
+            {isSimulating ? 'Simulating...' : 'Run Simulation'}
           </button>
         </div>
       </div>
@@ -432,13 +530,13 @@ const QuantumOpticsDesigner = () => {
           >
             <X size={16} />
           </button>
-          <h3 className="font-light text-sm mb-2 text-blue-300">BB84 Quantum Key Distribution</h3>
+          <h3 className="font-light text-sm mb-2 text-blue-300">Industry-Scale Quantum Simulation</h3>
           <p className="text-xs text-slate-300 mb-3 font-light leading-relaxed max-w-4xl">
-            Quantum cryptography protocol where Alice transmits photons to Bob using random polarization bases. 
-            Bob measures with randomly chosen bases—matching bases yield secure key bits. Eve's interception introduces detectable errors.
+            Full quantum mechanical simulation with probability amplitudes, detector statistics, and editable component parameters. 
+            Click any component to edit its properties in real-time.
           </p>
           <div className="text-xs space-y-1 text-slate-400 font-light">
-            <p><strong>Shortcuts:</strong> Delete/Backspace to remove | Ctrl+C to copy | Ctrl+V to paste | Click & drag to move</p>
+            <p><strong>Features:</strong> Quantum probability calculations • Detector efficiency modeling • Adjustable polarization angles • Statistical analysis • Wave plate transformations</p>
           </div>
         </div>
       )}
@@ -460,15 +558,21 @@ const QuantumOpticsDesigner = () => {
                   <div className="text-3xl mb-2 text-white drop-shadow-lg font-light">{item.icon}</div>
                   <div className="text-xs text-white/90 font-light tracking-wide">{item.label}</div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               </div>
             ))}
           </div>
 
           {selectedComponent && (
             <div className="mt-8 pt-5 border-t border-slate-800/50">
-              <h3 className="text-slate-300 font-light text-sm mb-3 tracking-wide">SELECTED</h3>
+              <h3 className="text-slate-300 font-light text-sm mb-3 tracking-wide">ACTIONS</h3>
               <div className="space-y-2">
+                <button
+                  onClick={() => setShowProperties(!showProperties)}
+                  className="w-full px-4 py-2.5 bg-blue-950/30 hover:bg-blue-900/40 text-blue-300 rounded-lg flex items-center justify-center gap-2 transition-all border border-blue-800/30 text-sm font-light"
+                >
+                  <Settings size={14} />
+                  Properties
+                </button>
                 <button
                   onClick={rotateComponent}
                   className="w-full px-4 py-2.5 bg-slate-800/50 hover:bg-slate-700/50 text-slate-200 rounded-lg flex items-center justify-center gap-2 transition-all border border-slate-700/50 text-sm font-light"
@@ -478,7 +582,7 @@ const QuantumOpticsDesigner = () => {
                 </button>
                 <button
                   onClick={duplicateComponent}
-                  className="w-full px-4 py-2.5 bg-blue-950/30 hover:bg-blue-900/40 text-blue-300 rounded-lg flex items-center justify-center gap-2 transition-all border border-blue-800/30 text-sm font-light"
+                  className="w-full px-4 py-2.5 bg-slate-800/50 hover:bg-slate-700/50 text-slate-200 rounded-lg flex items-center justify-center gap-2 transition-all border border-slate-700/50 text-sm font-light"
                 >
                   <Copy size={14} />
                   Duplicate
@@ -503,9 +607,9 @@ const QuantumOpticsDesigner = () => {
           onDragOver={(e) => e.preventDefault()}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onClick={() => setSelectedComponent(null)}
+          onClick={() => { setSelectedComponent(null); setShowProperties(false); }}
         >
-          {/* Subtle grid */}
+          {/* Grid */}
           <div 
             className="absolute inset-0 opacity-[0.03]"
             style={{
@@ -514,7 +618,7 @@ const QuantumOpticsDesigner = () => {
             }}
           />
 
-          {/* Beams with glow effect */}
+          {/* Beams with enhanced visualization */}
           <svg className="absolute inset-0 pointer-events-none" style={{ width: '100%', height: '100%' }}>
             <defs>
               <filter id="glow">
@@ -524,6 +628,11 @@ const QuantumOpticsDesigner = () => {
                   <feMergeNode in="SourceGraphic"/>
                 </feMerge>
               </filter>
+              <linearGradient id="beamGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#ef4444" stopOpacity="0.3"/>
+                <stop offset="50%" stopColor="#ef4444" stopOpacity="0.8"/>
+                <stop offset="100%" stopColor="#ef4444" stopOpacity="0.3"/>
+              </linearGradient>
             </defs>
             {beams.map((beam, i) => (
               <g key={i}>
@@ -533,15 +642,27 @@ const QuantumOpticsDesigner = () => {
                   x2={beam.to.x}
                   y2={beam.to.y}
                   stroke={beam.state === 'H' || beam.state === 'V' ? '#ef4444' : '#a78bfa'}
-                  strokeWidth="2"
-                  opacity={beam.intensity * 0.8}
+                  strokeWidth="3"
+                  opacity={beam.intensity * 0.7}
                   filter="url(#glow)"
                   className="animate-pulse"
                 />
+                {showProbabilities && (
+                  <text
+                    x={(beam.from.x + beam.to.x) / 2}
+                    y={(beam.from.y + beam.to.y) / 2 - 10}
+                    fill="#60a5fa"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                  >
+                    I={beam.intensity.toFixed(2)}
+                  </text>
+                )}
                 <circle
                   cx={beam.to.x}
                   cy={beam.to.y}
-                  r="3"
+                  r="4"
                   fill={beam.state === 'H' || beam.state === 'V' ? '#ef4444' : '#a78bfa'}
                   opacity={beam.intensity}
                   filter="url(#glow)"
@@ -552,6 +673,46 @@ const QuantumOpticsDesigner = () => {
 
           {/* Components */}
           {components.map(renderComponent)}
+
+          {/* Detector Statistics Overlay */}
+          {showProbabilities && detectorResults.size > 0 && components.filter(c => c.type === 'detector').map(detector => {
+            const stats = detectorResults.get(detector.id);
+            if (!stats || stats.totalPhotons === 0) return null;
+            
+            return (
+              <div
+                key={detector.id}
+                className="absolute pointer-events-none"
+                style={{ left: detector.x + 40, top: detector.y - 60 }}
+              >
+                <div className="bg-slate-900/95 backdrop-blur-md border border-emerald-500/50 rounded-lg p-3 shadow-2xl min-w-[140px]">
+                  <div className="text-xs font-light text-emerald-400 mb-2">Detection Stats</div>
+                  <div className="space-y-1">
+                    {Array.from(stats.counts.entries()).map(([state, count]) => {
+                      const probability = count / stats.totalPhotons;
+                      return (
+                        <div key={state} className="flex items-center gap-2">
+                          <div className="text-xs text-slate-300 w-6">{state}:</div>
+                          <div className="flex-1 bg-slate-800 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                              style={{ width: `${probability * 100}%` }}
+                            />
+                          </div>
+                          <div className="text-xs text-slate-400 w-12 text-right">
+                            {(probability * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="text-xs text-slate-500 mt-2 pt-2 border-t border-slate-800">
+                      n={stats.totalPhotons}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
 
           {/* Empty state */}
           {components.length === 0 && (
@@ -565,11 +726,210 @@ const QuantumOpticsDesigner = () => {
           )}
         </div>
 
+        {/* Properties Panel */}
+        {showProperties && selectedComp && (
+          <div className="w-80 bg-gradient-to-b from-slate-900/50 to-slate-900/30 backdrop-blur-xl border-l border-slate-800/50 flex flex-col overflow-y-auto">
+            <div className="p-5 border-b border-slate-800/50 flex items-center justify-between sticky top-0 bg-slate-900/80 backdrop-blur-xl z-10">
+              <h2 className="text-slate-300 font-light text-sm tracking-wide">PROPERTIES</h2>
+              <button 
+                onClick={() => setShowProperties(false)}
+                className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 font-light mb-2 block">Component Type</label>
+                <div className="text-sm text-slate-200 font-mono bg-slate-800/50 px-3 py-2 rounded-lg border border-slate-700/50">
+                  {selectedComp.type}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 font-light mb-2 block">Label</label>
+                <input
+                  type="text"
+                  value={selectedComp.properties.label || ''}
+                  onChange={(e) => updateComponentProperty(selectedComp.id, 'label', e.target.value)}
+                  className="w-full bg-slate-800/50 text-slate-200 px-3 py-2 rounded-lg border border-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  placeholder="Enter label..."
+                />
+              </div>
+
+              {selectedComp.type === 'laser' && (
+                <div>
+                  <label className="text-xs text-slate-400 font-light mb-2 block">Polarization Angle (°)</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="180"
+                    value={selectedComp.properties.angle || 0}
+                    onChange={(e) => updateComponentProperty(selectedComp.id, 'angle', parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>0° (H)</span>
+                    <span className="text-blue-400 font-mono">{selectedComp.properties.angle || 0}°</span>
+                    <span>90° (V)</span>
+                  </div>
+                  <div className="mt-3 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                    <div className="text-xs text-slate-400 mb-2">Visual representation:</div>
+                    <svg width="100%" height="60" className="bg-slate-900/50 rounded">
+                      <line x1="10" y1="30" x2="150" y2="30" stroke="#334155" strokeWidth="1" />
+                      <line 
+                        x1="80" 
+                        y1="30" 
+                        x2={80 + 30 * Math.cos((selectedComp.properties.angle || 0) * Math.PI / 180)} 
+                        y2={30 - 30 * Math.sin((selectedComp.properties.angle || 0) * Math.PI / 180)}
+                        stroke="#ef4444" 
+                        strokeWidth="3"
+                        markerEnd="url(#arrowhead)"
+                      />
+                      <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="5" refY="3" orient="auto">
+                          <polygon points="0 0, 5 3, 0 6" fill="#ef4444" />
+                        </marker>
+                      </defs>
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              {selectedComp.type === 'polarizer' && (
+                <>
+                  <div>
+                    <label className="text-xs text-slate-400 font-light mb-2 block">Polarization Angle (°)</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="180"
+                      value={selectedComp.properties.angle || 0}
+                      onChange={(e) => updateComponentProperty(selectedComp.id, 'angle', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-slate-400 mt-1">
+                      <span>0°</span>
+                      <span className="text-purple-400 font-mono">{selectedComp.properties.angle || 0}°</span>
+                      <span>180°</span>
+                    </div>
+                  </div>
+                  <div className="bg-blue-950/30 border border-blue-800/30 rounded-lg p-3">
+                    <div className="text-xs text-blue-300 font-light">
+                      <strong>Quantum Mechanics:</strong> Malus's Law applies. Transmission probability = cos²(θ), where θ is the angle difference between photon and polarizer.
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {selectedComp.type === 'beamsplitter' && (
+                <div>
+                  <label className="text-xs text-slate-400 font-light mb-2 block">Reflectivity</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedComp.properties.reflectivity || 0.5}
+                    onChange={(e) => updateComponentProperty(selectedComp.id, 'reflectivity', parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>0% (All transmitted)</span>
+                    <span className="text-cyan-400 font-mono">{((selectedComp.properties.reflectivity || 0.5) * 100).toFixed(0)}%</span>
+                    <span>100% (All reflected)</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="bg-slate-800/50 rounded p-2 border border-slate-700/50">
+                      <div className="text-xs text-slate-500">Transmission</div>
+                      <div className="text-lg text-emerald-400 font-mono">{((1 - (selectedComp.properties.reflectivity || 0.5)) * 100).toFixed(0)}%</div>
+                    </div>
+                    <div className="bg-slate-800/50 rounded p-2 border border-slate-700/50">
+                      <div className="text-xs text-slate-500">Reflection</div>
+                      <div className="text-lg text-blue-400 font-mono">{((selectedComp.properties.reflectivity || 0.5) * 100).toFixed(0)}%</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedComp.type === 'mirror' && (
+                <div>
+                  <label className="text-xs text-slate-400 font-light mb-2 block">Reflectivity</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="1"
+                    step="0.01"
+                    value={selectedComp.properties.reflectivity || 1.0}
+                    onChange={(e) => updateComponentProperty(selectedComp.id, 'reflectivity', parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-center text-sm text-slate-300 mt-2 font-mono">
+                    {((selectedComp.properties.reflectivity || 1.0) * 100).toFixed(1)}%
+                  </div>
+                </div>
+              )}
+
+              {selectedComp.type === 'detector' && (
+                <div>
+                  <label className="text-xs text-slate-400 font-light mb-2 block">Detection Efficiency</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="1"
+                    step="0.01"
+                    value={selectedComp.properties.efficiency || 0.95}
+                    onChange={(e) => updateComponentProperty(selectedComp.id, 'efficiency', parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="text-center text-sm text-slate-300 mt-2 font-mono">
+                    η = {((selectedComp.properties.efficiency || 0.95) * 100).toFixed(1)}%
+                  </div>
+                  <div className="mt-3 bg-amber-950/30 border border-amber-800/30 rounded-lg p-3">
+                    <div className="text-xs text-amber-300 font-light">
+                      Real detectors have quantum efficiency &lt;100%. Some photons are not detected due to material absorption or reflection.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedComp.type === 'waveplate' && (
+                <div>
+                  <label className="text-xs text-slate-400 font-light mb-2 block">Wave Plate Type</label>
+                  <select
+                    value={selectedComp.properties.waveplatetype || 'quarter'}
+                    onChange={(e) => updateComponentProperty(selectedComp.id, 'waveplatetype', e.target.value)}
+                    className="w-full bg-slate-800/50 text-slate-200 px-3 py-2 rounded-lg border border-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  >
+                    <option value="quarter">Quarter-wave (λ/4)</option>
+                    <option value="half">Half-wave (λ/2)</option>
+                  </select>
+                  <div className="mt-3 bg-emerald-950/30 border border-emerald-800/30 rounded-lg p-3">
+                    <div className="text-xs text-emerald-300 font-light">
+                      {selectedComp.properties.waveplatetype === 'quarter' 
+                        ? 'Converts linear → circular polarization (90° phase shift)'
+                        : 'Rotates linear polarization (180° phase shift)'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-slate-800/50">
+                <div className="text-xs text-slate-500 font-light space-y-1">
+                  <div>Position: ({selectedComp.x.toFixed(0)}, {selectedComp.y.toFixed(0)})</div>
+                  <div>Rotation: {selectedComp.rotation}°</div>
+                  <div>ID: <span className="font-mono text-[10px]">{selectedComp.id}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Simulation Output Panel */}
         {showLogs && (
           <div className="w-96 bg-gradient-to-b from-slate-900/50 to-slate-900/30 backdrop-blur-xl border-l border-slate-800/50 flex flex-col">
             <div className="p-5 border-b border-slate-800/50 flex items-center justify-between">
-              <h2 className="text-slate-300 font-light text-sm tracking-wide">SIMULATION OUTPUT</h2>
+              <h2 className="text-slate-300 font-light text-sm tracking-wide">SIMULATION LOG</h2>
               <button 
                 onClick={() => setShowLogs(false)}
                 className="p-1 hover:bg-white/10 rounded-lg transition-colors text-slate-400"
@@ -603,6 +963,18 @@ const QuantumOpticsDesigner = () => {
                       <span className="text-xs opacity-60">{(log.intensity * 100).toFixed(0)}%</span>
                     </div>
                   )}
+                  {log.probability !== undefined && log.probability < 1 && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="text-[10px] text-slate-400">P:</div>
+                      <div className="flex-1 bg-slate-900/50 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500"
+                          style={{ width: `${log.probability * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs opacity-60">{(log.probability * 100).toFixed(1)}%</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -613,4 +985,4 @@ const QuantumOpticsDesigner = () => {
   );
 };
 
-export default QuantumOpticsDesigner;
+export default App;
