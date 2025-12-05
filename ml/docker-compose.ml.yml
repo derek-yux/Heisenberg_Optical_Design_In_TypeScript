@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  ml-optimizer:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    container_name: quantum-ml-optimizer
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - quantum-network
+
+  quantum-optics-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: Heisenberg_optical_design_in_typescript
+    ports:
+      - "3000:80"
+    depends_on:
+      - ml-optimizer
+    environment:
+      - ML_API_URL=http://ml-optimizer:5000
+    networks:
+      - quantum-network
+
+networks:
+  quantum-network:
+    driver: bridge

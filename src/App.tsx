@@ -217,6 +217,23 @@ const App = () => {
       setShowProperties(false);
     }
   };
+  const optimizeLayout = async () => {
+    const response = await fetch('http://localhost:5000/api/optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goal_type: 'bb84_key_distribution',
+        target_efficiency: 0.95,
+        max_components: 8
+      })
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+      setComponents(data.layout.components);
+      console.log(`Optimized! Score: ${data.layout.performance_score}`);
+    }
+  };
 
   const resetBoard = () => {
     setComponents([]);
@@ -475,7 +492,7 @@ const App = () => {
           </div>
           <div>
             <h1 className="text-xl font-light tracking-wide">Heisenberg: The Quantum Optical Designer</h1>
-            <p className="text-xs text-slate-400 font-light">Optical Systems Design CAD</p>
+            <p className="text-xs text-slate-400 font-light">Optical Systems Design EDA</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -503,6 +520,9 @@ const App = () => {
           >
             <Trash2 size={14} />
             Reset
+          </button>
+          <button onClick={optimizeLayout} className="px-4 py-2 bg-blue-600/50 hover:bg-blue-700/50 rounded-lg flex items-center gap-2 transition-all border border-blue-500/50 backdrop-blur-sm text-sm font-light">
+            ML Optimize
           </button>
           <button
             onClick={loadBB84Demo}
