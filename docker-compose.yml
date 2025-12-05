@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  quantum-optics-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: heisenberg_optical_design_in_typescript
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    networks:
+      - quantum-network
+
+networks:
+  quantum-network:
+    driver: bridge

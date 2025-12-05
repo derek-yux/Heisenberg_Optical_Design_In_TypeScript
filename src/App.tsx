@@ -530,7 +530,7 @@ const App = () => {
           >
             <X size={16} />
           </button>
-          <h3 className="font-light text-sm mb-2 text-blue-300">Industry-Scale Quantum Simulation</h3>
+          <h3 className="font-light text-sm mb-2 text-blue-300">Your Solution for Quantum Optics Systems Simulation</h3>
           <p className="text-xs text-slate-300 mb-3 font-light leading-relaxed max-w-4xl">
             Full quantum mechanical simulation with probability amplitudes, detector statistics, and editable component parameters. 
             Click any component to edit its properties in real-time.
