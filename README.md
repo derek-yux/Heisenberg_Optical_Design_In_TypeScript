@@ -98,96 +98,6 @@ This isn't a simple laser→detector system—it's a **constrained optimization 
 }
 ```
 
-### What the ML Optimizer Generates
-
-**For BB84 Key Distribution Goal:**
-```json
-{
-  "ml_optimized_layout": {
-    "component_counts": {
-      "lasers": 2,
-      "mirrors": 1,
-      "beamsplitters": 1,
-      "polarizers": 2,
-      "detectors": 2,
-      "waveplates": 0
-    },
-    "total_components": 8
-  },
-  "predicted_performance": {
-    "transmission": 0.304,
-    "photon_loss": 0.696,
-    "detection_efficiency": 0.28,
-    "performance_score": 42.4
-  },
-  "score_breakdown": {
-    "detection_component": 35.6,
-    "intensity_component": 26.8,
-    "loss_penalty": -30.0,
-    "complexity_penalty": -10.0,
-    "bb84_bonus": 20.0,
-    "final_score": 42.4
-  }
-}
-```
-
-**For Maximize Detection Goal (same constraints):**
-```json
-{
-  "ml_optimized_layout": {
-    "component_counts": {
-      "lasers": 2,
-      "mirrors": 1,
-      "beamsplitters": 1,
-      "polarizers": 2,
-      "detectors": 5,  // More detectors for detection
-      "waveplates": 0
-    },
-    "total_components": 11
-  },
-  "predicted_performance": {
-    "transmission": 0.304,
-    "photon_loss": 0.696,
-    "performance_score": 19.9
-  },
-  "explanation": "Added 3 more detectors to maximize detection channels, but score is lower because complexity penalty outweighs detection gains"
-}
-```
-
-### Why This Design?
-
-**The BB84 Design (8 components, score 42.4):**
-- **2 lasers** (FIXED requirement)
-- **1 mirror** (REQUIRED for realistic beam routing in lab; can't ignore physical optics)
-- **1 beamsplitter** (REQUIRED for entanglement swapping protocol)
-- **2 polarizers** (REQUIRED minimum—measure H/V basis)
-- **2 detectors** (REQUIRED minimum—measure both parties' outcomes)
-
-**Why 69.6% loss is expected:**
-- 1 mirror @ 95% transmission = 95% remaining
-- 2 polarizers @ 80% each = 64% remaining  
-- 1 beamsplitter @ 50% = **32% remaining → 68% loss**
-
-**The Key Insight:**
-You can't reduce below these minimums without breaking the protocol:
-- Remove mirrors? Beams can't physically route in your lab
-- Remove polarizers? Can't measure both basis types for quantum cryptography
-- Remove beamsplitter? No entanglement manipulation
-- This design respects physics and protocol requirements while optimizing within those bounds
-
-### The Comparison: ML vs. Naive Design
-
-| Aspect | Naive Design | ML Optimized |
-|--------|--------------|--------------|
-| Components | 16 (over-specified) | 8 (constraint-minimal) |
-| Lasers | 2 | 2 ✓ |
-| Mirrors | 3 | 1 ✓ |
-| Beamsplitters | 2 | 1 ✓ |
-| Polarizers | 4 | 2 ✓ |
-| Detectors | 2 | 2 ✓ |
-| Loss | 94.8% | 69.6% ✓ |
-| Score | 0/100 (useless) | 42.4/100 (viable) ✓ |
-
 ### The Workflow
 1. **Define constraints**: Specify exact min/max for each component based on your hardware
 2. **Choose optimization goal**: "BB84 Key Distribution" (exploits +20 bonus), "Maximize Detection", or "Minimize Loss"
@@ -206,11 +116,6 @@ The model learned from **7,171 realistic optical topologies** covering all combi
 - Waveplates: 0-2 for state control
 
 This diversity enables the model to understand **constraint-respecting trade-offs** across all realistic quantum optics scenarios.
-
-### Current State
-✅ **Works well for**: Finding designs that respect hardware constraints, exploring goal-specific trade-offs, showing why certain components are necessary  
-⚠️ **Limitations**: Score is heuristic (detection 40%, intensity 30%, penalties for loss/complexity), not a rigorous optimizer  
-🎯 **Best use**: Rapid constraint-aware exploration tool—ML generates options respecting physics, you validate with simulation
 
 ## Simulation Output
 
