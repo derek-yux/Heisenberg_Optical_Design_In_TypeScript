@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from typing import List, Dict
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+sys.path.insert(0, '/app')
 
 from models.layout_optimizer import LayoutOptimizerModel, DesignGoal, OpticalLayout
 
@@ -30,30 +33,43 @@ def optimize_layout():
     try:
         data = request.json
         
-        # Parse design goal
+        # Parse design goal with component ranges
         goal = DesignGoal(
             goal_type=data.get('goal_type', 'bb84_key_distribution'),
             target_efficiency=data.get('target_efficiency', 0.9),
             max_components=data.get('max_components', 10),
-            preferred_components=data.get('preferred_components', [])
+            preferred_components=data.get('preferred_components', []),
+            laser_range=tuple(data.get('laser_range', [1, 3])),
+            mirror_range=tuple(data.get('mirror_range', [0, 4])),
+            beamsplitter_range=tuple(data.get('beamsplitter_range', [0, 4])),
+            polarizer_range=tuple(data.get('polarizer_range', [0, 4])),
+            detector_range=tuple(data.get('detector_range', [1, 4])),
+            waveplate_range=tuple(data.get('waveplate_range', [0, 3]))
         )
         
         # Generate optimized layout
         optimized_layout = model.generate_optimized_layout(goal)
-        
-        return jsonify({
+
+        # Prepare response including provenance and explanation
+        response = {
             'success': True,
             'layout': {
                 'components': optimized_layout.components,
                 'performance_score': optimized_layout.performance_score,
                 'detection_efficiency': optimized_layout.detection_efficiency,
-                'photon_loss': optimized_layout.photon_loss
+                'photon_loss': optimized_layout.photon_loss,
+                'provenance': getattr(optimized_layout, 'provenance', None),
+                'explanation': getattr(optimized_layout, 'explanation', None),
+                'score_breakdown': getattr(optimized_layout, 'score_breakdown', None)
             },
             'metadata': {
                 'goal_type': goal.goal_type,
-                'model_confidence': 0.85
+                'model_confidence': 0.85,
+                'recommendations': _generate_recommendations({'components': optimized_layout.components}, optimized_layout.performance_score)
             }
-        })
+        }
+
+        return jsonify(response)
     
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -63,7 +79,12 @@ def train_model():
     """Train model on historical design data"""
     try:
         data = request.json
-        design_history = data.get('design_history', [])
+        
+        # Handle both formats: direct list or wrapped in object
+        if isinstance(data, list):
+            design_history = data
+        else:
+            design_history = data.get('design_history', [])
         
         if not design_history:
             return jsonify({'success': False, 'error': 'No training data provided'}), 400
@@ -71,6 +92,7 @@ def train_model():
         model.train_from_history(design_history)
         
         # Save trained model
+        os.makedirs('models', exist_ok=True)
         model.save_model('models/trained_optimizer.pkl')
         
         return jsonify({

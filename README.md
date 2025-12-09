@@ -2,20 +2,49 @@
 
 An interactive optical design system for quantum computing applications with a focus on quantum key distribution (BB84 protocol).
 
+### 🤖 AI-Powered Layout Optimization
+Click **ML Optimize** to auto-generate optical designs. Set component constraints (min/max counts for each type) and choose a goal:
+- **BB84 Key Distribution** — balanced cryptography setup
+- **Maximize Detection** — multi-detector arrays for high photon capture
+- **Minimize Loss** — direct paths with minimal scattering
+
+Get instant explanations, performance scores, and tailored topologies—no templates.
+
 <img width="1896" height="865" alt="Screenshot 2025-12-03 at 10 35 10 PM" src="https://github.com/user-attachments/assets/ed9f0bbc-dca4-41bc-9d2f-b81f83dcd97e" />
 <img width="1894" height="858" alt="Screenshot 2025-12-03 at 10 35 39 PM" src="https://github.com/user-attachments/assets/90c96cd9-de34-4e7f-8c23-d4261db44c24" />
 
-1. Install dependencies:
+For local development:
+1. **Install frontend dependencies:**
 ```bash
 npm install
 ```
 
-2. Start the development server:
+2. **Start the ML optimization service (optional but recommended):**
+```bash
+cd ml
+docker-compose -f docker-compose.ml.yml up -d
+cd ..
+```
+
+3. **Start the development server:**
 ```bash
 npm run dev
 ```
+Then, open `http://localhost:5173`
 
-3. Open `http://localhost:5173`
+With Docker:
+```bash
+# Start everything
+docker-compose up -d --build
+
+# Train model
+docker exec quantum-ml-optimizer python scripts/train_model.py
+
+# Stop everything
+docker-compose down
+```
+
+Then, open `http://localhost:3000`
 
 ## Components Available
 
@@ -26,21 +55,188 @@ npm run dev
 - **Wave Plate**: Modifies photon polarization
 - **Detector**: Measures photon arrival and state
 
+## Components Library
+
+| Component | Function | Editable Properties |
+|-----------|----------|-------------------|
+| **Laser Source** o | Generates photons with specific polarization | Polarization angle (0-180°) |
+| **Mirror** 0  Reflects light beams at 90° angles | Reflectivity (50-100%) |
+| **Beam Splitter** ◆ | Splits photons probabilistically | Reflectivity/Transmission ratio (0-100%) |
+| **Polarizer** ⫴ | Filters photons by polarization basis | Polarization angle (0-180°) |
+| **Wave Plate** ⊕ | Modifies photon quantum state | Quarter-wave (λ/4) or Half-wave (λ/2) |
+| **Detector** X | Measures photon arrival and state | Detection efficiency (50-100%) |
+
 ## Usage
 
-1. Drag components from the toolbar onto the canvas
-2. Click and drag components to reposition them
-3. Select a component and use "Rotate" to change orientation
-4. Click "Simulate" to see photon propagation
-5. Try "Load BB84 Demo" for a pre-built quantum cryptography setup
+1. **Manual Design**: Drag components from the toolbar onto the canvas, reposition, and rotate
+2. **AI-Guided**: Click "ML Optimize" to auto-generate designs based on goals and component constraints
+3. **Simulate**: Click "Run Simulation" to trace photons through your optical system
+4. **Demo**: Try "Load BB84 Demo" for a pre-built quantum cryptography example
 
-## Tech Stack
+## Use Case: Entanglement Distribution for Quantum Repeater Networks
 
-- React 18
-- TypeScript 5
-- Vite
-- Tailwind CSS
-- Lucide React Icons
+### The Real Problem
+You're building a **quantum repeater node** for long-distance quantum communication. Your system must:
+
+1. **Receive entangled photon pairs** from two separate sources (Alice & Bob laser lines)
+2. **Route beams optically** using mirrors (physical lab constraint—beams can't disappear!)
+3. **Measure in multiple bases** (H/V polarization for each party)
+4. **Manipulate entanglement** with beamsplitters for entanglement swapping
+5. **Detect outcomes** across multiple channels
+
+This isn't a simple laser→detector system—it's a **constrained optimization problem** where you can't remove components without breaking the protocol.
+
+### Hardware Constraints (from your lab)
+```json
+{
+  "laser_range": [2, 2],           // Exactly 2 entangled photon sources (FIXED)
+  "mirror_range": [1, 3],          // 1-3 mirrors for beam routing (REQUIRED)
+  "beamsplitter_range": [1, 2],    // 1-2 beamsplitters for manipulation
+  "polarizer_range": [2, 4],       // 2-4 polarizers for basis measurement
+  "detector_range": [2, 5],        // 2-5 detectors for outcome measurement
+  "waveplate_range": [0, 2]        // 0-2 waveplates (optional)
+}
+```
+
+### What the ML Optimizer Generates
+
+**For BB84 Key Distribution Goal:**
+```json
+{
+  "ml_optimized_layout": {
+    "component_counts": {
+      "lasers": 2,
+      "mirrors": 1,
+      "beamsplitters": 1,
+      "polarizers": 2,
+      "detectors": 2,
+      "waveplates": 0
+    },
+    "total_components": 8
+  },
+  "predicted_performance": {
+    "transmission": 0.304,
+    "photon_loss": 0.696,
+    "detection_efficiency": 0.28,
+    "performance_score": 42.4
+  },
+  "score_breakdown": {
+    "detection_component": 35.6,
+    "intensity_component": 26.8,
+    "loss_penalty": -30.0,
+    "complexity_penalty": -10.0,
+    "bb84_bonus": 20.0,
+    "final_score": 42.4
+  }
+}
+```
+
+**For Maximize Detection Goal (same constraints):**
+```json
+{
+  "ml_optimized_layout": {
+    "component_counts": {
+      "lasers": 2,
+      "mirrors": 1,
+      "beamsplitters": 1,
+      "polarizers": 2,
+      "detectors": 5,  // More detectors for detection
+      "waveplates": 0
+    },
+    "total_components": 11
+  },
+  "predicted_performance": {
+    "transmission": 0.304,
+    "photon_loss": 0.696,
+    "performance_score": 19.9
+  },
+  "explanation": "Added 3 more detectors to maximize detection channels, but score is lower because complexity penalty outweighs detection gains"
+}
+```
+
+### Why This Design?
+
+**The BB84 Design (8 components, score 42.4):**
+- **2 lasers** (FIXED requirement)
+- **1 mirror** (REQUIRED for realistic beam routing in lab; can't ignore physical optics)
+- **1 beamsplitter** (REQUIRED for entanglement swapping protocol)
+- **2 polarizers** (REQUIRED minimum—measure H/V basis)
+- **2 detectors** (REQUIRED minimum—measure both parties' outcomes)
+
+**Why 69.6% loss is expected:**
+- 1 mirror @ 95% transmission = 95% remaining
+- 2 polarizers @ 80% each = 64% remaining  
+- 1 beamsplitter @ 50% = **32% remaining → 68% loss**
+
+**The Key Insight:**
+You can't reduce below these minimums without breaking the protocol:
+- Remove mirrors? Beams can't physically route in your lab
+- Remove polarizers? Can't measure both basis types for quantum cryptography
+- Remove beamsplitter? No entanglement manipulation
+- This design respects physics and protocol requirements while optimizing within those bounds
+
+### The Comparison: ML vs. Naive Design
+
+| Aspect | Naive Design | ML Optimized |
+|--------|--------------|--------------|
+| Components | 16 (over-specified) | 8 (constraint-minimal) |
+| Lasers | 2 | 2 ✓ |
+| Mirrors | 3 | 1 ✓ |
+| Beamsplitters | 2 | 1 ✓ |
+| Polarizers | 4 | 2 ✓ |
+| Detectors | 2 | 2 ✓ |
+| Loss | 94.8% | 69.6% ✓ |
+| Score | 0/100 (useless) | 42.4/100 (viable) ✓ |
+
+### The Workflow
+1. **Define constraints**: Specify exact min/max for each component based on your hardware
+2. **Choose optimization goal**: "BB84 Key Distribution" (exploits +20 bonus), "Maximize Detection", or "Minimize Loss"
+3. **Click ML Optimize**: Model generates topology **respecting all constraints** (~50ms)
+4. **Review the breakdown**: See exactly where the 42.4 score comes from (detection 35.6, intensity 26.8, loss -30, complexity -10, BB84 +20)
+5. **Run simulation**: Verify photon paths and measurement logic
+6. **Iterate**: Adjust constraints (e.g., "try 2-3 mirrors instead of 1") and re-optimize to explore variations
+
+### Training Data
+The model learned from **7,171 realistic optical topologies** covering all combinations of:
+- Lasers: 1-4 sources
+- Mirrors: 0-4 for routing
+- Beamsplitters: 0-3 for manipulation
+- Polarizers: 0-4 for basis measurement
+- Detectors: 1-6 for outcomes
+- Waveplates: 0-2 for state control
+
+This diversity enables the model to understand **constraint-respecting trade-offs** across all realistic quantum optics scenarios.
+
+### Current State
+✅ **Works well for**: Finding designs that respect hardware constraints, exploring goal-specific trade-offs, showing why certain components are necessary  
+⚠️ **Limitations**: Score is heuristic (detection 40%, intensity 30%, penalties for loss/complexity), not a rigorous optimizer  
+🎯 **Best use**: Rapid constraint-aware exploration tool—ML generates options respecting physics, you validate with simulation
+
+## Simulation Output
+
+The simulation logs show:
+- **Emission events** (blue): Photon generation from lasers
+- **Interaction events** (purple): Component interactions with probability calculations
+- **Detection events** (green): Successful photon measurements
+- **Loss events** (red): Photon absorption or system exits
+
+Each event includes:
+- Intensity bars showing photon strength
+- Probability calculations (P = %)
+- Component labels and IDs
+
+### Frontend
+- **React 18** - UI framework
+- **TypeScript 5** - Type safety
+- **Vite** - Build tool and dev server
+- **Tailwind CSS** - Utility-first styling
+- **Lucide React** - Icon library
+
+### Backend (ML Service)
+- **Python 3.11** - Runtime
+- **Flask** - REST API framework
+- **NumPy** - Numerical computations
+- **Docker** - Containerization
 
 ## License
 

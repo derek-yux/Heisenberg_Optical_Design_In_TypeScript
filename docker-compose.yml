@@ -1,18 +1,40 @@
-version: '3.8'
-
 services:
-  quantum-optics-app:
+  ml-optimizer:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: quantum-ml-optimizer
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./ml/models:/app/models
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - quantum-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: heisenberg_optical_design_in_typescript
+    container_name: quantum-optics-frontend
     ports:
       - "3000:80"
-    restart: unless-stopped
+    depends_on:
+      ml-optimizer:
+        condition: service_healthy
     environment:
-      - NODE_ENV=production
+      - ML_API_URL=http://ml-optimizer:5000
     networks:
       - quantum-network
+    restart: unless-stopped
 
 networks:
   quantum-network:

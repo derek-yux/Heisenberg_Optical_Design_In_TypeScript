@@ -59,6 +59,19 @@ const App = () => {
   const [detectorResults, setDetectorResults] = useState<Map<string, { counts: Map<PolarizationState, number>; totalPhotons: number }>>(new Map());
   const canvasRef = useRef<HTMLDivElement>(null);
   const copiedComponents = useRef<OpticalComponent[]>([]);
+  const [showOptimizeModal, setShowOptimizeModal] = useState(false);
+  const [optimizeGoal, setOptimizeGoal] = useState<'maximize_detection' | 'minimize_loss' | 'bb84_key_distribution'>('bb84_key_distribution');
+  const [optimizeTargetEfficiency, setOptimizeTargetEfficiency] = useState<number>(0.95);
+  const [optimizeResponse, setOptimizeResponse] = useState<any>(null);
+  const [componentRanges, setComponentRanges] = useState({
+    laser: [2, 2] as [number, number],           // Quantum repeater: exactly 2 laser sources
+    mirror: [1, 3] as [number, number],          // Quantum repeater: 1-3 mirrors for routing
+    beamsplitter: [1, 2] as [number, number],    // Quantum repeater: 1-2 beamsplitters
+    polarizer: [2, 4] as [number, number],       // Quantum repeater: 2-4 polarizers for BB84
+    detector: [2, 5] as [number, number],        // Quantum repeater: 2-5 detectors
+    waveplate: [0, 2] as [number, number],       // Quantum repeater: optional waveplates
+  });
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
 
   const componentLibrary: { type: ComponentType; icon: string; label: string; gradient: string }[] = [
     { type: 'laser', icon: '◉', label: 'Laser Source', gradient: 'from-red-500 to-orange-600' },
@@ -217,21 +230,43 @@ const App = () => {
       setShowProperties(false);
     }
   };
+
   const optimizeLayout = async () => {
-    const response = await fetch('http://localhost:5000/api/optimize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        goal_type: 'bb84_key_distribution',
-        target_efficiency: 0.95,
-        max_components: 8
-      })
-    });
-    
-    const data = await response.json();
-    if (data.success) {
-      setComponents(data.layout.components);
-      console.log(`Optimized! Score: ${data.layout.performance_score}`);
+    // Open modal to allow user to choose optimization goal/options
+    setShowOptimizeModal(true);
+  };
+
+  const submitOptimize = async () => {
+    try {
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const apiUrl = isDev ? 'http://localhost:5001/api/optimize' : '/api/optimize';
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          goal_type: optimizeGoal,
+          target_efficiency: optimizeTargetEfficiency,
+          laser_range: componentRanges.laser,
+          mirror_range: componentRanges.mirror,
+          beamsplitter_range: componentRanges.beamsplitter,
+          polarizer_range: componentRanges.polarizer,
+          detector_range: componentRanges.detector,
+          waveplate_range: componentRanges.waveplate
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setComponents(data.layout.components);
+        setOptimizeResponse(data);
+        setShowOptimizeModal(false);
+      } else {
+        alert('Optimization failed: ' + (data.error || 'unknown'));
+      }
+    } catch (error) {
+      console.error('ML optimization failed:', error);
+      alert('ML service not available. Make sure ML container is running.');
     }
   };
 
@@ -557,6 +592,153 @@ const App = () => {
           </p>
           <div className="text-xs space-y-1 text-slate-400 font-light">
             <p><strong>Features:</strong> Quantum probability calculations • Detector efficiency modeling • Adjustable polarization angles • Statistical analysis • Wave plate transformations</p>
+          </div>
+        </div>
+      )}
+
+      {/* Optimize Modal */}
+      {showOptimizeModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowOptimizeModal(false)} />
+          <div className="relative bg-slate-900/95 border border-slate-800/50 rounded-lg p-6 w-[600px] max-h-[90vh] shadow-2xl backdrop-blur-md overflow-y-auto">
+            <h3 className="text-lg font-light text-slate-200 mb-4 sticky top-0 bg-slate-900/95 pb-2">ML Optimization Options</h3>
+            <div className="space-y-4 text-sm text-slate-300">
+              <div>
+                <label className="block text-xs text-slate-400 mb-2 font-light">Optimization Goal</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="goal" checked={optimizeGoal === 'bb84_key_distribution'} onChange={() => setOptimizeGoal('bb84_key_distribution')} />
+                    <span>BB84 Key Dist.</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="goal" checked={optimizeGoal === 'maximize_detection'} onChange={() => setOptimizeGoal('maximize_detection')} />
+                    <span>Max Detection</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="goal" checked={optimizeGoal === 'minimize_loss'} onChange={() => setOptimizeGoal('minimize_loss')} />
+                    <span>Min Loss</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <label className="block text-xs text-slate-400 mb-2 font-light">Target Efficiency</label>
+                <input type="range" min={0.5} max={0.99} step={0.01} value={optimizeTargetEfficiency} onChange={(e) => setOptimizeTargetEfficiency(parseFloat(e.target.value))} className="w-full" />
+                <div className="text-xs text-slate-400 mt-1">{(optimizeTargetEfficiency * 100).toFixed(0)}% target efficiency</div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <label className="block text-xs text-slate-400 mb-3 font-light">Component Ranges (min - max)</label>
+                <div className="space-y-3">
+                  {(['laser', 'mirror', 'beamsplitter', 'polarizer', 'detector', 'waveplate'] as const).map((compType) => (
+                    <div key={compType}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-slate-300 capitalize">{compType}</span>
+                        <span className="text-xs text-slate-400 font-mono">{componentRanges[compType][0]} - {componentRanges[compType][1]}</span>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <input 
+                          type="number" 
+                          min={0} 
+                          max={10}
+                          value={componentRanges[compType][0]} 
+                          onChange={(e) => {
+                            const newMin = parseInt(e.target.value || '0');
+                            if (newMin <= componentRanges[compType][1]) {
+                              setComponentRanges({...componentRanges, [compType]: [newMin, componentRanges[compType][1]]});
+                            }
+                          }}
+                          className="w-12 bg-slate-800/50 rounded px-2 py-1 text-slate-200 text-sm" 
+                        />
+                        <input 
+                          type="range" 
+                          min={componentRanges[compType][0]} 
+                          max={10} 
+                          value={componentRanges[compType][1]} 
+                          onChange={(e) => {
+                            const newMax = parseInt(e.target.value || '10');
+                            setComponentRanges({...componentRanges, [compType]: [componentRanges[compType][0], newMax]});
+                          }}
+                          className="flex-1"
+                        />
+                        <input 
+                          type="number" 
+                          min={componentRanges[compType][0]} 
+                          max={10}
+                          value={componentRanges[compType][1]} 
+                          onChange={(e) => {
+                            const newMax = parseInt(e.target.value || '10');
+                            if (newMax >= componentRanges[compType][0]) {
+                              setComponentRanges({...componentRanges, [compType]: [componentRanges[compType][0], newMax]});
+                            }
+                          }}
+                          className="w-12 bg-slate-800/50 rounded px-2 py-1 text-slate-200 text-sm" 
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 sticky bottom-0 bg-slate-900/95 pt-3 border-t border-slate-800">
+              <button onClick={() => setShowOptimizeModal(false)} className="px-4 py-2 rounded bg-slate-800/40 text-slate-300 hover:bg-slate-800/60">Cancel</button>
+              <button onClick={submitOptimize} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white">Optimize</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Optimization Result Panel */}
+      {optimizeResponse && (
+        <div className="fixed right-6 bottom-6 w-[360px] bg-slate-900/95 border border-slate-800/50 rounded-lg p-4 shadow-2xl backdrop-blur-md z-40">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="text-xs text-slate-400">ML Optimization Result</div>
+              <button 
+                onClick={() => setShowScoreBreakdown(!showScoreBreakdown)}
+                className="text-lg font-light text-slate-200 hover:text-slate-100 flex items-center gap-2 w-full text-left"
+              >
+                <span>Score: <span className="font-mono">{optimizeResponse.layout.performance_score.toFixed(1)}</span></span>
+                <span className="text-xs text-slate-400">{showScoreBreakdown ? '▼' : '▶'}</span>
+              </button>
+            </div>
+            <button onClick={() => setOptimizeResponse(null)} className="text-slate-400 hover:text-slate-200">✕</button>
+          </div>
+          
+          {/* Score Breakdown */}
+          {showScoreBreakdown && optimizeResponse.layout.score_breakdown && (
+            <div className="mt-3 p-3 bg-slate-800/30 rounded border border-slate-700/30 text-xs text-slate-300 space-y-1 font-mono">
+              <div className="flex justify-between"><span>Detection Component:</span><span className="text-emerald-400">{optimizeResponse.layout.score_breakdown.detection_component?.toFixed(2) || '0.00'}</span></div>
+              <div className="flex justify-between"><span>Intensity Component:</span><span className="text-blue-400">{optimizeResponse.layout.score_breakdown.intensity_component?.toFixed(2) || '0.00'}</span></div>
+              <div className="flex justify-between"><span>Loss Penalty:</span><span className="text-red-400">{optimizeResponse.layout.score_breakdown.loss_penalty?.toFixed(2) || '0.00'}</span></div>
+              <div className="flex justify-between"><span>Complexity Penalty:</span><span className="text-orange-400">{optimizeResponse.layout.score_breakdown.complexity_penalty?.toFixed(2) || '0.00'}</span></div>
+              {optimizeResponse.layout.score_breakdown.bb84_bonus !== undefined && optimizeResponse.layout.score_breakdown.bb84_bonus > 0 && (
+                <div className="flex justify-between"><span>BB84 Bonus:</span><span className="text-purple-400">+{optimizeResponse.layout.score_breakdown.bb84_bonus?.toFixed(2)}</span></div>
+              )}
+              <div className="flex justify-between border-t border-slate-700/50 pt-1 mt-1 text-slate-100"><span>Final Score:</span><span className="font-bold">{optimizeResponse.layout.performance_score.toFixed(1)}</span></div>
+            </div>
+          )}
+          <div className="mt-3 text-sm text-slate-300">
+            <div><strong>Provenance:</strong> {optimizeResponse.layout.provenance}</div>
+            <div className="mt-2"><strong>Detection Efficiency:</strong> {(optimizeResponse.layout.detection_efficiency * 100).toFixed(0)}%</div>
+            <div className="mt-2"><strong>Photon Loss:</strong> {(optimizeResponse.layout.photon_loss * 100).toFixed(0)}%</div>
+            {optimizeResponse.layout.explanation && (
+              <div className="mt-3">
+                <div className="text-xs text-slate-400 mb-1">Explanation</div>
+                <ul className="text-xs list-disc list-inside text-slate-300">
+                  {optimizeResponse.layout.explanation.map((line: string, i: number) => <li key={i}>{line}</li>)}
+                </ul>
+              </div>
+            )}
+            {optimizeResponse.metadata?.recommendations && (
+              <div className="mt-3">
+                <div className="text-xs text-slate-400 mb-1">Recommendations</div>
+                <ul className="text-xs list-disc list-inside text-amber-300">
+                  {optimizeResponse.metadata.recommendations.map((r: string, i: number) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       )}

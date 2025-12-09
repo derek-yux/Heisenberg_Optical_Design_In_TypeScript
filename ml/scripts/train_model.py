@@ -1,45 +1,23 @@
 import sys
-sys.path.append('..')
-
-from models.layout_optimizer import LayoutOptimizerModel
+import os
 import json
 
-# Sample training data
-training_data = [
-    {
-        'layout': {
-            'components': [
-                {'id': 'l1', 'type': 'laser', 'x': 100, 'y': 200, 'rotation': 0, 'properties': {}},
-                {'id': 'd1', 'type': 'detector', 'x': 600, 'y': 200, 'rotation': 0, 'properties': {'efficiency': 0.95}}
-            ]
-        },
-        'simulation_results': {
-            'detections': 95,
-            'emissions': 100,
-            'loss_events': 5,
-            'avg_intensity': 0.9,
-            'bb84_compatible': False
-        }
-    },
-    {
-        'layout': {
-            'components': [
-                {'id': 'l1', 'type': 'laser', 'x': 100, 'y': 200, 'rotation': 0, 'properties': {}},
-                {'id': 'p1', 'type': 'polarizer', 'x': 200, 'y': 200, 'rotation': 0, 'properties': {}},
-                {'id': 'bs1', 'type': 'beamsplitter', 'x': 350, 'y': 200, 'rotation': 0, 'properties': {}},
-                {'id': 'p2', 'type': 'polarizer', 'x': 500, 'y': 200, 'rotation': 0, 'properties': {}},
-                {'id': 'd1', 'type': 'detector', 'x': 600, 'y': 200, 'rotation': 0, 'properties': {'efficiency': 0.92}}
-            ]
-        },
-        'simulation_results': {
-            'detections': 85,
-            'emissions': 100,
-            'loss_events': 15,
-            'avg_intensity': 0.75,
-            'bb84_compatible': True
-        }
-    }
-]
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from models.layout_optimizer import LayoutOptimizerModel
+
+# Load training data from file
+training_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'training_data.json')
+try:
+    with open(training_data_path, 'r') as f:
+        training_data = json.load(f)
+    print(f"Loaded {len(training_data)} training examples from training_data.json")
+except FileNotFoundError:
+    print(f"Warning: training_data.json not found at {training_data_path}, using fallback data")
+    # Fallback to sample data if file not found
+    training_data = []
+
 
 def main():
     print("Training Layout Optimizer Model...")
@@ -47,8 +25,9 @@ def main():
     model = LayoutOptimizerModel()
     model.train_from_history(training_data)
     
-    # Save model
-    model.save_model('../models/trained_optimizer.pkl')
+    # Save to /app/models (absolute path in container)
+    model_path = '/app/models/trained_optimizer.pkl'
+    model.save_model(model_path)
     
     print("\n✓ Model trained and saved successfully!")
     print(f"  - Patterns learned: {len(model.trained_patterns)}")
