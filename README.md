@@ -60,7 +60,7 @@ Then, open `http://localhost:3000`
 | Component | Function | Editable Properties |
 |-----------|----------|-------------------|
 | **Laser Source** o | Generates photons with specific polarization | Polarization angle (0-180°) |
-| **Mirror** 0  Reflects light beams at 90° angles | Reflectivity (50-100%) |
+| **Mirror** 0 | Reflects light beams at 90° angles | Reflectivity (50-100%) |
 | **Beam Splitter** ◆ | Splits photons probabilistically | Reflectivity/Transmission ratio (0-100%) |
 | **Polarizer** ⫴ | Filters photons by polarization basis | Polarization angle (0-180°) |
 | **Wave Plate** ⊕ | Modifies photon quantum state | Quarter-wave (λ/4) or Half-wave (λ/2) |
