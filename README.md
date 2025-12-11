@@ -2,37 +2,9 @@
 
 An interactive optical design system for quantum computing applications with a focus on quantum key distribution (BB84 protocol).
 
-### 🤖 AI-Powered Layout Optimization
-Click **ML Optimize** to auto-generate optical designs. Set component constraints (min/max counts for each type) and choose a goal:
-- **BB84 Key Distribution** — balanced cryptography setup
-- **Maximize Detection** — multi-detector arrays for high photon capture
-- **Minimize Loss** — direct paths with minimal scattering
-
-Get instant explanations, performance scores, and tailored topologies—no templates.
-
 <img width="1896" height="865" alt="Screenshot 2025-12-03 at 10 35 10 PM" src="https://github.com/user-attachments/assets/ed9f0bbc-dca4-41bc-9d2f-b81f83dcd97e" />
 <img width="1894" height="858" alt="Screenshot 2025-12-03 at 10 35 39 PM" src="https://github.com/user-attachments/assets/90c96cd9-de34-4e7f-8c23-d4261db44c24" />
 
-For local development:
-1. **Install frontend dependencies:**
-```bash
-npm install
-```
-
-2. **Start the ML optimization service (optional but recommended):**
-```bash
-cd ml
-docker-compose -f docker-compose.ml.yml up -d
-cd ..
-```
-
-3. **Start the development server:**
-```bash
-npm run dev
-```
-Then, open `http://localhost:5173`
-
-With Docker:
 ```bash
 # Start everything
 docker-compose up -d --build
@@ -40,7 +12,7 @@ docker-compose up -d --build
 # Train model
 docker exec quantum-ml-optimizer python scripts/train_model.py
 
-# Stop everything
+# When done, stop everything
 docker-compose down
 ```
 
@@ -72,6 +44,12 @@ Then, open `http://localhost:3000`
 2. **AI-Guided**: Click "ML Optimize" to auto-generate designs based on goals and component constraints
 3. **Simulate**: Click "Run Simulation" to trace photons through your optical system
 4. **Demo**: Try "Load BB84 Demo" for a pre-built quantum cryptography example
+
+### AI-Powered Layout Optimization
+Click **ML Optimize** to auto-generate optical designs. Set component constraints (min/max counts for each type) and choose a goal:
+- **BB84 Key Distribution** — balanced cryptography setup
+- **Maximize Detection** — multi-detector arrays for high photon capture
+- **Minimize Loss** — direct paths with minimal scattering
 
 ## Use Case: Entanglement Distribution for Quantum Repeater Networks
 

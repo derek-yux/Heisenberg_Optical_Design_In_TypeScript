@@ -60,16 +60,15 @@ const App = () => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const copiedComponents = useRef<OpticalComponent[]>([]);
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
-  const [optimizeGoal, setOptimizeGoal] = useState<'maximize_detection' | 'minimize_loss' | 'bb84_key_distribution'>('bb84_key_distribution');
   const [optimizeTargetEfficiency, setOptimizeTargetEfficiency] = useState<number>(0.95);
   const [optimizeResponse, setOptimizeResponse] = useState<any>(null);
   const [componentRanges, setComponentRanges] = useState({
-    laser: [2, 2] as [number, number],           // Quantum repeater: exactly 2 laser sources
-    mirror: [1, 3] as [number, number],          // Quantum repeater: 1-3 mirrors for routing
-    beamsplitter: [1, 2] as [number, number],    // Quantum repeater: 1-2 beamsplitters
-    polarizer: [2, 4] as [number, number],       // Quantum repeater: 2-4 polarizers for BB84
-    detector: [2, 5] as [number, number],        // Quantum repeater: 2-5 detectors
-    waveplate: [0, 2] as [number, number],       // Quantum repeater: optional waveplates
+    laser: [1, 3] as [number, number],           // 1-3 laser sources
+    mirror: [0, 4] as [number, number],          // 0-4 mirrors for routing
+    beamsplitter: [0, 3] as [number, number],    // 0-3 beamsplitters for path splitting
+    polarizer: [0, 4] as [number, number],       // 0-4 polarizers
+    detector: [2, 6] as [number, number],        // 2-6 detectors to maximize detection
+    waveplate: [0, 2] as [number, number],       // 0-2 optional waveplates
   });
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false);
 
@@ -245,7 +244,7 @@ const App = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal_type: optimizeGoal,
+          goal_type: 'maximize_detection',
           target_efficiency: optimizeTargetEfficiency,
           laser_range: componentRanges.laser,
           mirror_range: componentRanges.mirror,
@@ -603,21 +602,9 @@ const App = () => {
           <div className="relative bg-slate-900/95 border border-slate-800/50 rounded-lg p-6 w-[600px] max-h-[90vh] shadow-2xl backdrop-blur-md overflow-y-auto">
             <h3 className="text-lg font-light text-slate-200 mb-4 sticky top-0 bg-slate-900/95 pb-2">ML Optimization Options</h3>
             <div className="space-y-4 text-sm text-slate-300">
-              <div>
-                <label className="block text-xs text-slate-400 mb-2 font-light">Optimization Goal</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="goal" checked={optimizeGoal === 'bb84_key_distribution'} onChange={() => setOptimizeGoal('bb84_key_distribution')} />
-                    <span>BB84 Key Dist.</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="goal" checked={optimizeGoal === 'maximize_detection'} onChange={() => setOptimizeGoal('maximize_detection')} />
-                    <span>Max Detection</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="goal" checked={optimizeGoal === 'minimize_loss'} onChange={() => setOptimizeGoal('minimize_loss')} />
-                    <span>Min Loss</span>
-                  </label>
+              <div className="bg-blue-950/30 border border-blue-800/30 rounded-lg p-3 mb-4">
+                <div className="text-xs text-blue-300 font-light">
+                  <strong>Optimization Goal:</strong> Maximize detection probability by optimizing component placement, angles, and optical paths to minimize photon loss and maximize detector hits.
                 </div>
               </div>
 
