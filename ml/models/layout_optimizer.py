@@ -306,12 +306,13 @@ class LayoutOptimizerModel:
             pattern_counts[comp_type] = pattern_counts.get(comp_type, 0) + 1
         
         # Adjust counts to respect goal constraints while staying close to pattern
-        laser_count = np.clip(pattern_counts.get('laser', 1), goal.laser_range[0], goal.laser_range[1])
-        mirror_count = np.clip(pattern_counts.get('mirror', 0), goal.mirror_range[0], goal.mirror_range[1])
-        beamsplitter_count = np.clip(pattern_counts.get('beamsplitter', 0), goal.beamsplitter_range[0], goal.beamsplitter_range[1])
-        polarizer_count = np.clip(pattern_counts.get('polarizer', 0), goal.polarizer_range[0], goal.polarizer_range[1])
-        detector_count = np.clip(pattern_counts.get('detector', 1), goal.detector_range[0], goal.detector_range[1])
-        waveplate_count = np.clip(pattern_counts.get('waveplate', 0), goal.waveplate_range[0], goal.waveplate_range[1])
+        # Convert to int() to avoid numpy int64 JSON serialization issues
+        laser_count = int(np.clip(pattern_counts.get('laser', 1), goal.laser_range[0], goal.laser_range[1]))
+        mirror_count = int(np.clip(pattern_counts.get('mirror', 0), goal.mirror_range[0], goal.mirror_range[1]))
+        beamsplitter_count = int(np.clip(pattern_counts.get('beamsplitter', 0), goal.beamsplitter_range[0], goal.beamsplitter_range[1]))
+        polarizer_count = int(np.clip(pattern_counts.get('polarizer', 0), goal.polarizer_range[0], goal.polarizer_range[1]))
+        detector_count = int(np.clip(pattern_counts.get('detector', 1), goal.detector_range[0], goal.detector_range[1]))
+        waveplate_count = int(np.clip(pattern_counts.get('waveplate', 0), goal.waveplate_range[0], goal.waveplate_range[1]))
         
         # Generate layout with these counts (using similar logic to _generate_random_layout but with learned counts)
         components: List[Dict] = []
@@ -324,11 +325,11 @@ class LayoutOptimizerModel:
                 'id': f'laser_{i}',
                 'type': 'laser',
                 'x': x_pos,
-                'y': y_positions[i] if i < len(y_positions) else 250,
+                'y': float(y_positions[i]) if i < len(y_positions) else 250,  # Convert numpy float to Python float
                 'rotation': 0,
                 'properties': {
                     'state': 'H' if i % 2 == 0 else 'V',
-                    'angle': (i * 45) % 180,
+                    'angle': int((i * 45) % 180),
                     'label': f'L{i+1}'
                 }
             })
@@ -346,7 +347,7 @@ class LayoutOptimizerModel:
                 'rotation': 0,
                 'properties': {
                     'basis': 'rectilinear' if i % 2 == 0 else 'diagonal',
-                    'angle': (i * 45) % 180,
+                    'angle': int((i * 45) % 180),
                     'label': f'P{i+1}'
                 }
             })
@@ -416,7 +417,7 @@ class LayoutOptimizerModel:
                 'id': f'detector_{i}',
                 'type': 'detector',
                 'x': x_pos,
-                'y': detector_y_positions[i],
+                'y': float(detector_y_positions[i]),  # Convert numpy float to Python float
                 'rotation': 0,
                 'properties': {
                     'efficiency': min(0.98, goal.target_efficiency),
@@ -430,13 +431,13 @@ class LayoutOptimizerModel:
         """Generate a random layout respecting component constraints"""
         np.random.seed(seed)
         
-        # Random component counts within ranges
-        laser_count = np.random.randint(goal.laser_range[0], goal.laser_range[1] + 1)
-        mirror_count = np.random.randint(goal.mirror_range[0], goal.mirror_range[1] + 1)
-        beamsplitter_count = np.random.randint(goal.beamsplitter_range[0], goal.beamsplitter_range[1] + 1)
-        polarizer_count = np.random.randint(goal.polarizer_range[0], goal.polarizer_range[1] + 1)
-        detector_count = np.random.randint(goal.detector_range[0], goal.detector_range[1] + 1)
-        waveplate_count = np.random.randint(goal.waveplate_range[0], goal.waveplate_range[1] + 1)
+        # Random component counts within ranges - convert to int() for JSON serialization
+        laser_count = int(np.random.randint(goal.laser_range[0], goal.laser_range[1] + 1))
+        mirror_count = int(np.random.randint(goal.mirror_range[0], goal.mirror_range[1] + 1))
+        beamsplitter_count = int(np.random.randint(goal.beamsplitter_range[0], goal.beamsplitter_range[1] + 1))
+        polarizer_count = int(np.random.randint(goal.polarizer_range[0], goal.polarizer_range[1] + 1))
+        detector_count = int(np.random.randint(goal.detector_range[0], goal.detector_range[1] + 1))
+        waveplate_count = int(np.random.randint(goal.waveplate_range[0], goal.waveplate_range[1] + 1))
         
         components: List[Dict] = []
         x_pos = 100
@@ -448,11 +449,11 @@ class LayoutOptimizerModel:
                 'id': f'laser_{i}',
                 'type': 'laser',
                 'x': x_pos,
-                'y': y_positions[i] if i < len(y_positions) else 250,
+                'y': float(y_positions[i]) if i < len(y_positions) else 250,  # Convert numpy float
                 'rotation': 0,
                 'properties': {
                     'state': 'H' if i % 2 == 0 else 'V',
-                    'angle': (i * 45) % 180,
+                    'angle': int((i * 45) % 180),
                     'label': f'L{i+1}'
                 }
             })
@@ -470,7 +471,7 @@ class LayoutOptimizerModel:
                 'rotation': 0,
                 'properties': {
                     'basis': 'rectilinear' if i % 2 == 0 else 'diagonal',
-                    'angle': (i * 45) % 180,
+                    'angle': int((i * 45) % 180),
                     'label': f'P{i+1}'
                 }
             })
@@ -540,7 +541,7 @@ class LayoutOptimizerModel:
                 'id': f'detector_{i}',
                 'type': 'detector',
                 'x': x_pos,
-                'y': detector_y_positions[i],
+                'y': float(detector_y_positions[i]),  # Convert numpy float
                 'rotation': 0,
                 'properties': {
                     'efficiency': min(0.98, goal.target_efficiency),
