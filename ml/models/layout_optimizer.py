@@ -8,12 +8,10 @@ from sklearn.preprocessing import StandardScaler
 
 @dataclass
 class DesignGoal:
-    """Represents design objectives"""
-    goal_type: str  # 'maximize_detection'
+    goal_type: str
     target_efficiency: float = 0.9
     max_components: int = 10
     preferred_components: List[str] = None
-    # Component ranges: min and max counts for each component type
     laser_range: Tuple[int, int] = (1, 3)
     mirror_range: Tuple[int, int] = (0, 4)
     beamsplitter_range: Tuple[int, int] = (0, 4)
@@ -23,7 +21,6 @@ class DesignGoal:
 
 @dataclass
 class OpticalLayout:
-    """Represents a complete optical system layout"""
     components: List[Dict]
     performance_score: float
     detection_efficiency: float
@@ -33,14 +30,10 @@ class OpticalLayout:
     score_breakdown: Optional[Dict[str, float]] = None
     
 class LayoutOptimizerModel:
-    """ML-based optimizer using Random Forest to learn optimal layouts"""
-    
     def __init__(self):
         self.component_types = ['laser', 'mirror', 'beamsplitter', 'polarizer', 'detector', 'waveplate']
         self.trained_patterns = []
         self.performance_history = []
-        
-        # ML components
         self.model = RandomForestRegressor(
             n_estimators=100,
             max_depth=10,
@@ -51,10 +44,7 @@ class LayoutOptimizerModel:
         self.is_trained = False
         
     def extract_features(self, layout: Dict) -> np.ndarray:
-        """Extract comprehensive features from optical layout for ML model"""
         features = []
-        
-        # Component count features (6 features)
         component_counts = {ct: 0 for ct in self.component_types}
         for comp in layout.get('components', []):
             comp_type = comp.get('type')
@@ -62,22 +52,18 @@ class LayoutOptimizerModel:
                 component_counts[comp_type] += 1
         
         features.extend([component_counts[ct] for ct in self.component_types])
-        
-        # Ratio features (3 features)
+
         total_components = sum(component_counts.values())
         detector_ratio = component_counts['detector'] / total_components if total_components > 0 else 0
         laser_ratio = component_counts['laser'] / total_components if total_components > 0 else 0
         beamsplitter_ratio = component_counts['beamsplitter'] / total_components if total_components > 0 else 0
         features.extend([detector_ratio, laser_ratio, beamsplitter_ratio])
-        
-        # Physics-based features (4 features)
-        # Estimated transmission through beamsplitters and polarizers
+
         estimated_transmission = (0.5 ** component_counts['beamsplitter']) * (0.8 ** component_counts['polarizer'])
         estimated_mirror_loss = 1 - (0.95 ** component_counts['mirror'])
         laser_to_detector_ratio = component_counts['laser'] / max(component_counts['detector'], 1)
         features.extend([estimated_transmission, estimated_mirror_loss, laser_to_detector_ratio, total_components])
-        
-        # Spatial distribution features (4 features)
+
         if layout.get('components'):
             positions = [(c['x'], c['y']) for c in layout['components']]
             avg_x = np.mean([p[0] for p in positions])
@@ -88,7 +74,6 @@ class LayoutOptimizerModel:
         else:
             features.extend([0, 0, 0, 0])
         
-        # Path complexity (2 features)
         total_distance = 0
         if len(layout.get('components', [])) > 1:
             for i in range(len(layout['components']) - 1):
@@ -103,25 +88,19 @@ class LayoutOptimizerModel:
         return np.array(features)
     
     def calculate_performance_score(self, layout: Dict, simulation_results: Dict) -> float:
-        """Calculate performance score from simulation results"""
         score = 0.0
         
-        # Detection efficiency (most important)
         detections = simulation_results.get('detections', 0)
         emissions = simulation_results.get('emissions', 1)
         detection_rate = detections / emissions if emissions > 0 else 0
         score += detection_rate * 50
         
-        # Photon loss penalty
         loss_events = simulation_results.get('loss_events', 0)
         loss_penalty = loss_events * 3
         score -= loss_penalty
         
-        # Component efficiency
         avg_intensity = simulation_results.get('avg_intensity', 0)
         score += avg_intensity * 40
-        
-        # Complexity penalty (prefer simpler designs)
         num_components = len(layout.get('components', []))
         complexity_penalty = (num_components - 5) * 1.5 if num_components > 5 else 0
         score -= complexity_penalty
@@ -129,7 +108,6 @@ class LayoutOptimizerModel:
         return max(0, min(100, score))
     
     def train_from_history(self, design_history: List[Dict]):
-        """Train ML model from historical designs and their performance"""
         if len(design_history) == 0:
             print("No training data provided. Model will use untrained defaults.")
             return
@@ -155,19 +133,14 @@ class LayoutOptimizerModel:
                 'layout': layout
             })
             self.performance_history.append(score)
-        
-        # Train the model
         X = np.array(X)
         y = np.array(y)
         
-        # Scale features
         X_scaled = self.scaler.fit_transform(X)
         
-        # Fit Random Forest
         self.model.fit(X_scaled, y)
         self.is_trained = True
         
-        # Sort patterns by performance
         self.trained_patterns.sort(key=lambda x: x['score'], reverse=True)
         
         print(f"✓ ML model trained successfully!")
@@ -177,61 +150,45 @@ class LayoutOptimizerModel:
         print(f"  - Model R² score: {self.model.score(X_scaled, y):.3f}")
     
     def generate_optimized_layout(self, goal: DesignGoal) -> OpticalLayout:
-        """Generate optimized layout using ML model to predict best configuration.
-        
-        Strategy:
-        1. Generate candidates based on high-performing training patterns (80%)
-        2. Generate some random exploration candidates (20%)
-        3. Use trained ML model to predict performance of each
-        4. Return the layout with highest predicted performance
-        """
-        
         if not self.is_trained:
             print("⚠️  Model not trained! Using fallback heuristics.")
             return self._generate_fallback_layout(goal)
-        
-        # Generate candidate layouts
+
         num_candidates = 50
-        num_pattern_based = int(num_candidates * 0.8)  # 80% based on good patterns
-        num_random = num_candidates - num_pattern_based  # 20% random exploration
+        num_pattern_based = int(num_candidates * 0.8)
+        num_random = num_candidates - num_pattern_based
         
         print(f"Generating {num_candidates} candidate layouts ({num_pattern_based} pattern-based, {num_random} random)...")
         
         candidates = []
-        
-        # Generate pattern-based candidates (from top-performing training examples)
-        top_patterns = self.trained_patterns[:5]  # Top 5 performing layouts
+
+        top_patterns = self.trained_patterns[:5]
         for i in range(num_pattern_based):
             pattern_idx = i % len(top_patterns)
             candidate_components = self._generate_from_pattern(top_patterns[pattern_idx]['layout'], goal, seed=i)
             candidates.append({'components': candidate_components})
-        
-        # Generate random exploration candidates
+
         for i in range(num_random):
             candidate_components = self._generate_random_layout(goal, seed=i + 1000)
             candidates.append({'components': candidate_components})
-        
-        # Predict performance for each candidate
+
         predictions = []
         for candidate in candidates:
             features = self.extract_features(candidate)
             features_scaled = self.scaler.transform(features.reshape(1, -1))
             predicted_score = self.model.predict(features_scaled)[0]
             predictions.append(predicted_score)
-        
-        # Select best candidate
+
         best_idx = np.argmax(predictions)
         best_layout = candidates[best_idx]
         predicted_score = predictions[best_idx]
         
         print(f"✓ Best candidate predicted score: {predicted_score:.2f}")
         print(f"✓ Score range: {min(predictions):.1f} - {max(predictions):.1f}")
-        
-        # Calculate actual expected performance
+
         expected_efficiency = self._estimate_efficiency(best_layout)
         expected_loss = self._estimate_loss(best_layout)
-        
-        # Build simulation results for scoring
+
         detections = int(expected_efficiency * 100)
         emissions = 100
         loss_events = int(expected_loss * 10)
@@ -245,8 +202,7 @@ class LayoutOptimizerModel:
         }
         
         actual_score = self.calculate_performance_score(best_layout, simulation_results)
-        
-        # Score breakdown
+
         detection_component = (detections / emissions) * 50 if emissions > 0 else 0
         loss_penalty = loss_events * 3
         intensity_component = avg_intensity * 40
@@ -260,16 +216,13 @@ class LayoutOptimizerModel:
             'complexity_penalty': -complexity_penalty,
             'final_score': actual_score
         }
-        
-        # Component counts for explanation
+
         comp_counts = {}
         for c in best_layout['components']:
             comp_counts[c['type']] = comp_counts.get(c['type'], 0) + 1
-        
-        # Determine if this came from a pattern or random generation
+
         is_pattern_based = best_idx < num_pattern_based
-        
-        # Explanation
+
         explanation: List[str] = []
         explanation.append(f"ML model evaluated {num_candidates} candidates")
         if is_pattern_based:
@@ -292,40 +245,30 @@ class LayoutOptimizerModel:
         )
     
     def _generate_from_pattern(self, pattern_layout: Dict, goal: DesignGoal, seed: int = 0) -> List[Dict]:
-        """Generate a layout based on a high-performing pattern from training data.
-        
-        Takes the component counts from a successful layout and generates a new layout
-        with similar proportions, while respecting user constraints.
-        """
         np.random.seed(seed)
         
-        # Extract component counts from pattern
         pattern_counts = {}
         for comp in pattern_layout.get('components', []):
             comp_type = comp['type']
             pattern_counts[comp_type] = pattern_counts.get(comp_type, 0) + 1
-        
-        # Adjust counts to respect goal constraints while staying close to pattern
-        # Convert to int() to avoid numpy int64 JSON serialization issues
+
         laser_count = int(np.clip(pattern_counts.get('laser', 1), goal.laser_range[0], goal.laser_range[1]))
         mirror_count = int(np.clip(pattern_counts.get('mirror', 0), goal.mirror_range[0], goal.mirror_range[1]))
         beamsplitter_count = int(np.clip(pattern_counts.get('beamsplitter', 0), goal.beamsplitter_range[0], goal.beamsplitter_range[1]))
         polarizer_count = int(np.clip(pattern_counts.get('polarizer', 0), goal.polarizer_range[0], goal.polarizer_range[1]))
         detector_count = int(np.clip(pattern_counts.get('detector', 1), goal.detector_range[0], goal.detector_range[1]))
         waveplate_count = int(np.clip(pattern_counts.get('waveplate', 0), goal.waveplate_range[0], goal.waveplate_range[1]))
-        
-        # Generate layout with these counts (using similar logic to _generate_random_layout but with learned counts)
+    
         components: List[Dict] = []
         x_pos = 100
         y_positions = np.linspace(150, 450, max(laser_count, 1))
         
-        # Add lasers
         for i in range(laser_count):
             components.append({
                 'id': f'laser_{i}',
                 'type': 'laser',
                 'x': x_pos,
-                'y': float(y_positions[i]) if i < len(y_positions) else 250,  # Convert numpy float to Python float
+                'y': float(y_positions[i]) if i < len(y_positions) else 250,
                 'rotation': 0,
                 'properties': {
                     'state': 'H' if i % 2 == 0 else 'V',
@@ -336,7 +279,6 @@ class LayoutOptimizerModel:
         
         x_pos += 120
         
-        # Add polarizers
         for i in range(polarizer_count):
             y_offset = i * 80 - (polarizer_count - 1) * 40
             components.append({
@@ -355,7 +297,6 @@ class LayoutOptimizerModel:
         if polarizer_count > 0:
             x_pos += 120
         
-        # Add waveplates
         for i in range(waveplate_count):
             y_offset = i * 80 - (waveplate_count - 1) * 40
             components.append({
@@ -374,7 +315,6 @@ class LayoutOptimizerModel:
         if waveplate_count > 0:
             x_pos += 120
         
-        # Add beamsplitters
         for i in range(beamsplitter_count):
             y_offset = i * 100 - (beamsplitter_count - 1) * 50
             components.append({
@@ -392,7 +332,6 @@ class LayoutOptimizerModel:
         if beamsplitter_count > 0:
             x_pos += 120
         
-        # Add mirrors
         for i in range(mirror_count):
             y_offset = i * 100 - (mirror_count - 1) * 50
             components.append({
@@ -410,14 +349,13 @@ class LayoutOptimizerModel:
         if mirror_count > 0:
             x_pos += 120
         
-        # Add detectors
         detector_y_positions = np.linspace(150, 450, detector_count)
         for i in range(detector_count):
             components.append({
                 'id': f'detector_{i}',
                 'type': 'detector',
                 'x': x_pos,
-                'y': float(detector_y_positions[i]),  # Convert numpy float to Python float
+                'y': float(detector_y_positions[i]),
                 'rotation': 0,
                 'properties': {
                     'efficiency': min(0.98, goal.target_efficiency),
@@ -428,10 +366,8 @@ class LayoutOptimizerModel:
         return components
     
     def _generate_random_layout(self, goal: DesignGoal, seed: int = 0) -> List[Dict]:
-        """Generate a random layout respecting component constraints"""
         np.random.seed(seed)
         
-        # Random component counts within ranges - convert to int() for JSON serialization
         laser_count = int(np.random.randint(goal.laser_range[0], goal.laser_range[1] + 1))
         mirror_count = int(np.random.randint(goal.mirror_range[0], goal.mirror_range[1] + 1))
         beamsplitter_count = int(np.random.randint(goal.beamsplitter_range[0], goal.beamsplitter_range[1] + 1))
@@ -443,7 +379,6 @@ class LayoutOptimizerModel:
         x_pos = 100
         y_positions = np.linspace(150, 450, max(laser_count, 1))
         
-        # Add lasers
         for i in range(laser_count):
             components.append({
                 'id': f'laser_{i}',
@@ -460,7 +395,6 @@ class LayoutOptimizerModel:
         
         x_pos += 120
         
-        # Add polarizers
         for i in range(polarizer_count):
             y_offset = i * 80 - (polarizer_count - 1) * 40
             components.append({
@@ -479,7 +413,6 @@ class LayoutOptimizerModel:
         if polarizer_count > 0:
             x_pos += 120
         
-        # Add waveplates
         for i in range(waveplate_count):
             y_offset = i * 80 - (waveplate_count - 1) * 40
             components.append({
@@ -497,8 +430,7 @@ class LayoutOptimizerModel:
         
         if waveplate_count > 0:
             x_pos += 120
-        
-        # Add beamsplitters
+
         for i in range(beamsplitter_count):
             y_offset = i * 100 - (beamsplitter_count - 1) * 50
             components.append({
@@ -516,7 +448,6 @@ class LayoutOptimizerModel:
         if beamsplitter_count > 0:
             x_pos += 120
         
-        # Add mirrors
         for i in range(mirror_count):
             y_offset = i * 100 - (mirror_count - 1) * 50
             components.append({
@@ -534,14 +465,13 @@ class LayoutOptimizerModel:
         if mirror_count > 0:
             x_pos += 120
         
-        # Add detectors
         detector_y_positions = np.linspace(150, 450, detector_count)
         for i in range(detector_count):
             components.append({
                 'id': f'detector_{i}',
                 'type': 'detector',
                 'x': x_pos,
-                'y': float(detector_y_positions[i]),  # Convert numpy float
+                'y': float(detector_y_positions[i]),
                 'rotation': 0,
                 'properties': {
                     'efficiency': min(0.98, goal.target_efficiency),
@@ -552,11 +482,9 @@ class LayoutOptimizerModel:
         return components
     
     def _generate_fallback_layout(self, goal: DesignGoal) -> OpticalLayout:
-        """Fallback layout when model is not trained"""
-        # Use simple heuristic: max lasers, min loss components
         laser_count = goal.laser_range[1]
         detector_count = goal.detector_range[1]
-        beamsplitter_count = min(1, goal.beamsplitter_range[1])  # Minimize splitting
+        beamsplitter_count = min(1, goal.beamsplitter_range[1])
         
         components = self._generate_random_layout(goal, seed=0)
         
@@ -574,7 +502,6 @@ class LayoutOptimizerModel:
         )
     
     def _estimate_transmission(self, layout: Dict) -> float:
-        """Calculate transmission through optical chain (0.0-1.0)"""
         transmission = 1.0
         
         for comp in layout['components']:
@@ -590,7 +517,6 @@ class LayoutOptimizerModel:
         return max(0.0, min(1.0, transmission))
     
     def _estimate_efficiency(self, layout: Dict) -> float:
-        """Estimate detection efficiency from layout"""
         detector_count = sum(1 for c in layout['components'] if c['type'] == 'detector')
         if detector_count == 0:
             return 0.0
@@ -604,12 +530,10 @@ class LayoutOptimizerModel:
         return detector_efficiency * transmission
     
     def _estimate_loss(self, layout: Dict) -> float:
-        """Estimate photon loss from layout"""
         transmission = self._estimate_transmission(layout)
         return 1.0 - transmission
     
     def save_model(self, filepath: str):
-        """Save trained model to disk"""
         with open(filepath, 'wb') as f:
             pickle.dump({
                 'model': self.model,
@@ -621,7 +545,6 @@ class LayoutOptimizerModel:
         print(f"Model saved to {filepath}")
     
     def load_model(self, filepath: str):
-        """Load trained model from disk"""
         with open(filepath, 'rb') as f:
             data = pickle.load(f)
             self.model = data['model']

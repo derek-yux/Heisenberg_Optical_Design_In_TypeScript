@@ -2,12 +2,9 @@ import sys
 import os
 import json
 
-# Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.layout_optimizer import LayoutOptimizerModel
-
-# Load training data from file
 training_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'training_data.json')
 try:
     with open(training_data_path, 'r') as f:
@@ -15,7 +12,6 @@ try:
     print(f"Loaded {len(training_data)} training examples from training_data.json")
 except FileNotFoundError:
     print(f"Warning: training_data.json not found at {training_data_path}, using fallback data")
-    # Fallback to sample data if file not found
     training_data = []
 
 
@@ -24,8 +20,6 @@ def main():
     
     model = LayoutOptimizerModel()
     model.train_from_history(training_data)
-    
-    # Save to /app/models (absolute path in container)
     model_path = '/app/models/trained_optimizer.pkl'
     model.save_model(model_path)
     
